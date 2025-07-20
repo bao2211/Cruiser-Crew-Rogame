@@ -3,6 +3,7 @@ local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 
@@ -26,6 +27,7 @@ local steer = 0
 local rotate = 0
 local verticalThrust = 0
 local isPositionLocked = false
+local isInVehicle = false
 
 -- Input state tracking
 local keysPressed = {
@@ -39,12 +41,17 @@ local keysPressed = {
 	C = false,
 }
 
--- GUI elements
-local screenGui, hoverButton, lockButton
+-- Get UI elements from PlayerGui (they're copied from StarterGui automatically)
+local playerGui = player:WaitForChild("PlayerGui")
+local vehicleControlGUI = playerGui:WaitForChild("VehicleControlGUI")
+local mainFrame = vehicleControlGUI:WaitForChild("MainFrame")
+local hoverButton = mainFrame:WaitForChild("HoverButton")
+local lockButton = mainFrame:WaitForChild("LockButton")
+
+print("GUI elements found successfully")
 
 -- Camera management
 local camera = Workspace.CurrentCamera
-local isInVehicle = false
 
 -- Debug function
 local function debugVehicleState()
@@ -212,7 +219,7 @@ local function forceRestoreControl()
 	print("CLIENT: Forces restored immediately after unlock")
 end
 
--- Camera functions (simplified)
+-- Camera functions
 local function fixVehicleCamera()
 	if player.Character and player.Character:FindFirstChild("Humanoid") then
 		camera.CameraType = Enum.CameraType.Custom
@@ -221,69 +228,20 @@ local function fixVehicleCamera()
 	end
 end
 
--- Create GUI function
-local function createGUI()
-	local screenGui = Instance.new("ScreenGui")
-	screenGui.Name = "VehicleControlGUI"
-	screenGui.Parent = player:WaitForChild("PlayerGui")
-
-	local mainFrame = Instance.new("Frame")
-	mainFrame.Size = UDim2.new(0, 300, 0, 170)
-	mainFrame.Position = UDim2.new(0, 10, 0, 10)
-	mainFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-	mainFrame.BorderSizePixel = 2
-	mainFrame.BorderColor3 = Color3.fromRGB(100, 100, 100)
-	mainFrame.Parent = screenGui
-
-	local titleLabel = Instance.new("TextLabel")
-	titleLabel.Size = UDim2.new(1, 0, 0, 30)
-	titleLabel.Position = UDim2.new(0, 0, 0, 0)
-	titleLabel.BackgroundTransparency = 1
-	titleLabel.Text = "Vehicle Controls"
-	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	titleLabel.TextSize = 18
-	titleLabel.Font = Enum.Font.SourceSansBold
-	titleLabel.Parent = mainFrame
-
-	local hoverButton = Instance.new("TextButton")
-	hoverButton.Size = UDim2.new(0.45, -5, 0, 40)
-	hoverButton.Position = UDim2.new(0, 5, 0, 35)
-	hoverButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-	hoverButton.Text = "Enable Hover"
-	hoverButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-	hoverButton.TextSize = 14
-	hoverButton.Font = Enum.Font.SourceSans
-	hoverButton.Parent = mainFrame
-
-	local lockButton = Instance.new("TextButton")
-	lockButton.Size = UDim2.new(0.45, -5, 0, 40)
-	lockButton.Position = UDim2.new(0.55, 0, 0, 35)
-	lockButton.BackgroundColor3 = Color3.fromRGB(100, 50, 50)
-	lockButton.Text = "Lock Position"
-	lockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-	lockButton.TextSize = 14
-	lockButton.Font = Enum.Font.SourceSans
-	lockButton.Parent = mainFrame
-
-	local controlsLabel = Instance.new("TextLabel")
-	controlsLabel.Size = UDim2.new(1, -10, 0, 80)
-	controlsLabel.Position = UDim2.new(0, 5, 0, 85)
-	controlsLabel.BackgroundTransparency = 1
-	controlsLabel.Text = "WASD: Move | QE: Rotate\nX: Thrust Up | C: Thrust Down\nF: Fix Camera"
-	controlsLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-	controlsLabel.TextSize = 12
-	controlsLabel.Font = Enum.Font.SourceSans
-	controlsLabel.TextYAlignment = Enum.TextYAlignment.Top
-	controlsLabel.Parent = mainFrame
-
-	return screenGui, hoverButton, lockButton
-end
-
--- Update button states
+-- Update button states - IMPROVED with visibility control
 local function updateButtonState()
-	if not seat or not hoverButton or not lockButton then
+	if not hoverButton or not lockButton then
 		return
 	end
+
+	if not seat then
+		-- No seat - hide the entire UI
+		vehicleControlGUI.Enabled = false
+		return
+	end
+
+	-- Show UI when in vehicle seat
+	vehicleControlGUI.Enabled = true
 
 	local currentGravComp = seat:GetAttribute("GravityCompensation") or DEFAULT_GRAVITY_COMPENSATION
 	print("Updating button state - GravComp:", currentGravComp)
@@ -308,13 +266,58 @@ local function updateButtonState()
 	end
 end
 
--- Seat change handler - DEFINE BEFORE USE
+-- Animation functions - FIXED GroupTransparency issue
+local function showUI()
+	vehicleControlGUI.Enabled = true
+	print("CLIENT: UI shown")
+end
+
+local function hideUI()
+	vehicleControlGUI.Enabled = false
+	print("CLIENT: UI hidden")
+end
+
+-- Initialize with UI hidden - SIMPLE VERSION
+vehicleControlGUI.Enabled = false
+print("CLIENT: UI initially hidden")
+
+-- Seat change handler - IMPROVED with better state detection
 local function onSeatChanged()
-	if seat then
-		print("Seated in vehicle:", seat.Name)
+	-- Check current actual seating state
+	local actuallySeated = false
+	local actualSeat = nil
+
+	if player.Character and player.Character:FindFirstChild("Humanoid") then
+		local humanoid = player.Character.Humanoid
+		if humanoid.Sit and humanoid.SeatPart and humanoid.SeatPart:IsA("VehicleSeat") then
+			actuallySeated = true
+			actualSeat = humanoid.SeatPart
+		end
+	end
+
+	print("onSeatChanged called - seat variable:", seat and seat.Name or "nil")
+	print("Actually seated:", actuallySeated, "in:", actualSeat and actualSeat.Name or "nil")
+
+	if seat and actuallySeated and actualSeat == seat then
+		-- We're properly seated in the current vehicle
+		print("CONFIRMED: Seated in vehicle:", seat.Name)
 		isInVehicle = true
 
-		-- Add attribute listeners
+		-- Show UI when entering vehicle
+		showUI()
+		print("CLIENT: UI shown - entered vehicle")
+
+		-- Clean up any existing connections first
+		local oldGravityConn = seat:GetAttribute("_gravityConnection")
+		local oldLockConn = seat:GetAttribute("_lockConnection")
+		if oldGravityConn and typeof(oldGravityConn) == "RBXScriptConnection" then
+			oldGravityConn:Disconnect()
+		end
+		if oldLockConn and typeof(oldLockConn) == "RBXScriptConnection" then
+			oldLockConn:Disconnect()
+		end
+
+		-- Add fresh attribute listeners
 		local gravityConnection = seat:GetAttributeChangedSignal("GravityCompensation"):Connect(function()
 			updateButtonState()
 		end)
@@ -340,35 +343,94 @@ local function onSeatChanged()
 		-- Store connections
 		seat:SetAttribute("_gravityConnection", gravityConnection)
 		seat:SetAttribute("_lockConnection", lockConnection)
+
+		-- Reset position lock state for new vehicle
+		isPositionLocked = false
+
+		-- Update UI to reflect new vehicle's state
 		updateButtonState()
 	else
-		print("Exited vehicle")
+		-- We're not in a vehicle (or switching vehicles)
+		print("CONFIRMED: Exited vehicle or switching")
 		isInVehicle = false
 
-		-- Clean up connections
-		if seat then
-			local gravityConnection = seat:GetAttribute("_gravityConnection")
-			local lockConnection = seat:GetAttribute("_lockConnection")
+		-- Hide UI when exiting vehicle
+		hideUI()
+		print("CLIENT: UI hidden - exited vehicle")
+
+		-- Clean up old vehicle if we have a reference
+		local oldSeat = seat
+		if oldSeat then
+			print("Cleaning up old seat:", oldSeat.Name)
+
+			-- Clean up connections
+			local gravityConnection = oldSeat:GetAttribute("_gravityConnection")
+			local lockConnection = oldSeat:GetAttribute("_lockConnection")
 
 			if gravityConnection and typeof(gravityConnection) == "RBXScriptConnection" then
 				gravityConnection:Disconnect()
+				print("Disconnected gravity connection")
 			end
 			if lockConnection and typeof(lockConnection) == "RBXScriptConnection" then
 				lockConnection:Disconnect()
+				print("Disconnected lock connection")
 			end
+
+			-- Remove all client forces and rotation controls
+			local controlForce = oldSeat:FindFirstChild("ControlForce")
+			if controlForce then
+				controlForce:Destroy()
+				print("Removed ControlForce")
+			end
+
+			local controlAngular = oldSeat:FindFirstChild("ControlAngular")
+			if controlAngular then
+				controlAngular:Destroy()
+				print("Removed ControlAngular")
+			end
+
+			-- Reset seat rotation to upright position
+			task.spawn(function()
+				task.wait(0.1)
+				if oldSeat and oldSeat.Parent then
+					local currentCFrame = oldSeat.CFrame
+					local position = currentCFrame.Position
+					local uprightCFrame = CFrame.new(position, position + Vector3.new(0, 0, -1))
+					oldSeat.CFrame = uprightCFrame
+					oldSeat.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+					print("CLIENT: Reset seat rotation to upright position")
+				end
+			end)
+
+			-- Send cleanup request to server
+			hoverToggleEvent:FireServer(oldSeat, "player_exited")
 		end
 
+		-- Reset ALL control variables
+		throttle = 0
+		steer = 0
+		rotate = 0
+		verticalThrust = 0
 		isPositionLocked = false
 
+		-- Reset all key states
+		for key, _ in pairs(keysPressed) do
+			keysPressed[key] = false
+		end
+
+		-- Reset UI to default state
 		if hoverButton and lockButton then
 			hoverButton.Text = "Enable Hover"
 			hoverButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+			lockButton.Text = "Lock Position"
+			lockButton.BackgroundColor3 = Color3.fromRGB(100, 50, 50)
 			lockButton.Visible = false
+			print("CLIENT: UI reset to default state")
 		end
 	end
 end
 
--- Seat detection setup
+-- Seat detection setup - COMPLETELY FIXED
 local function setupSeatDetection()
 	local character = player.Character
 	if not character then
@@ -380,32 +442,47 @@ local function setupSeatDetection()
 		return
 	end
 
-	-- Connect to seat changes
 	humanoid.Seated:Connect(function(isSeated, seatPart)
-		print("Seat event fired - Seated:", isSeated, "SeatPart:", seatPart)
+		print("=== SEAT EVENT ===")
+		print("isSeated:", isSeated)
+		print("seatPart:", seatPart)
+		print("Current seat variable:", seat and seat.Name or "nil")
+		print("=================")
 
 		if isSeated and seatPart and seatPart:IsA("VehicleSeat") then
+			-- Player sat in a VehicleSeat
+			print("ENTERING VEHICLE:", seatPart.Name)
+
+			-- If we were in a different vehicle, clean up the old one first
+			if seat and seat ~= seatPart then
+				print("SWITCHING VEHICLES - Cleaning up old vehicle:", seat.Name)
+				local oldSeat = seat
+				seat = nil -- Temporarily set to nil to trigger cleanup
+				onSeatChanged() -- This will clean up the old vehicle
+			end
+
+			-- Set new seat and enter
 			seat = seatPart
-			print("Seated in VehicleSeat:", seat.Name)
+			print("SETTING NEW SEAT TO:", seat.Name)
 			onSeatChanged()
 		elseif not isSeated then
-			print("Left seat")
-			seat = nil
-			onSeatChanged()
+			-- Player left seat completely
+			print("EXITING VEHICLE")
+			if seat then
+				print("CLEANING UP VEHICLE:", seat.Name)
+				seat = nil -- Set to nil to trigger exit cleanup
+				onSeatChanged()
+			end
 		end
 	end)
 
-	-- Check if already seated
+	-- Check if already seated when script starts
 	if humanoid.Sit and humanoid.SeatPart and humanoid.SeatPart:IsA("VehicleSeat") then
 		seat = humanoid.SeatPart
 		print("Already seated in:", seat.Name)
 		onSeatChanged()
 	end
 end
-
--- Initialize GUI
-screenGui, hoverButton, lockButton = createGUI()
-print("GUI created successfully")
 
 -- Connect hover button
 hoverButton.MouseButton1Click:Connect(function()
@@ -414,10 +491,8 @@ hoverButton.MouseButton1Click:Connect(function()
 		local currentGravComp = seat:GetAttribute("GravityCompensation") or DEFAULT_GRAVITY_COMPENSATION
 
 		if currentGravComp >= 1.0 then
-			print("CLIENT: Requesting hover disable")
 			hoverToggleEvent:FireServer(seat, false)
 		else
-			print("CLIENT: Requesting hover enable")
 			hoverToggleEvent:FireServer(seat, true)
 		end
 	else
@@ -470,14 +545,11 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 
 	local keyCode = input.KeyCode
 
-	-- Emergency camera fix with F key
 	if keyCode == Enum.KeyCode.F then
-		print("CLIENT: Emergency camera fix activated")
 		fixVehicleCamera()
 		return
 	end
 
-	-- Movement controls
 	if keyCode == Enum.KeyCode.W then
 		keysPressed.W = true
 		throttle = 1
@@ -550,22 +622,28 @@ UserInputService.InputEnded:Connect(function(input, gameProcessed)
 	end
 end)
 
--- Handle character spawning
+-- Character spawning
 player.CharacterAdded:Connect(function()
-	print("Character spawned, setting up seat detection")
 	task.wait(1)
 	setupSeatDetection()
 end)
 
--- Handle existing character
 if player.Character then
-	print("Existing character found, setting up seat detection")
 	setupSeatDetection()
 end
 
--- Main loop (removed camera checking that was causing issues)
+-- Main loop - IMPROVED seat validation
 RunService.RenderStepped:Connect(function()
-	if seat and seat.Occupant == player.Character:FindFirstChildOfClass("Humanoid") then
+	-- Validate that we're actually still in the seat
+	local actuallyInSeat = false
+	if seat and player.Character then
+		local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+		if humanoid and seat.Occupant == humanoid then
+			actuallyInSeat = true
+		end
+	end
+
+	if seat and actuallyInSeat then
 		if tick() % 1 < 0.016 then
 			debugVehicleState()
 		end
@@ -583,6 +661,12 @@ RunService.RenderStepped:Connect(function()
 			seat.Throttle = throttle
 			seat.Steer = steer
 		end
+	elseif seat then
+		-- We have a seat reference but we're not actually in it
+		-- This can happen during quick seat switches
+		print("DETECTED: Seat reference mismatch - triggering cleanup")
+		seat = nil
+		onSeatChanged()
 	end
 end)
 
