@@ -21,11 +21,11 @@ print("VehicleHover ServerScript started!")
 
 -- Handle hover toggle requests from clients
 hoverToggleEvent.OnServerEvent:Connect(function(player, vehicleSeat, command)
-	print("SERVER: Received request from", player.Name, "Command:", command)
+	print("SERVER: Received request from", player.Name, "Command:", command, "Vehicle:", vehicleSeat.Name)
 
 	if vehicleSeat and vehicleSeat:IsA("VehicleSeat") then
 		if command == "lock_position" then
-			-- Lock position
+			-- Lock position for THIS specific vehicle
 			vehicleSeat.Anchored = true
 			vehicleSeat:SetAttribute("PositionLocked", true)
 			vehicleSeat:SetAttribute("LockedPosition", vehicleSeat.Position)
@@ -36,7 +36,7 @@ hoverToggleEvent.OnServerEvent:Connect(function(player, vehicleSeat, command)
 			vehicleSeat.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
 			print("SERVER: Position locked for", vehicleSeat.Name, "by", player.Name)
 		elseif command == "unlock_position" then
-			-- Unlock position
+			-- Unlock position for THIS specific vehicle
 			local allBodyMovers = {
 				"HoverBodyPosition",
 				"HoverAngularVelocity",
@@ -62,54 +62,40 @@ hoverToggleEvent.OnServerEvent:Connect(function(player, vehicleSeat, command)
 
 			print("SERVER: Position unlocked for", vehicleSeat.Name, "by", player.Name)
 		elseif command == "player_exited" then
-			-- Player exited vehicle - clean up and reset
-			print("SERVER: Player", player.Name, "exited vehicle", vehicleSeat.Name)
+			-- Player exited vehicle - DON'T reset the vehicle's state, just clean up forces
+			print("SERVER: Player", player.Name, "exited vehicle", vehicleSeat.Name, "- preserving vehicle state")
 
-			-- Remove ALL body movers (client and server)
-			local allBodyMovers = {
-				"HoverBodyPosition",
-				"HoverAngularVelocity",
-				"HoverVelocity",
-				"HoverOrientation",
-				"HoverRotation",
+			-- Remove player-specific forces but keep vehicle state attributes
+			local playerForces = {
 				"ControlForce",
 				"ControlAngular",
 			}
 
-			for _, name in pairs(allBodyMovers) do
+			for _, name in pairs(playerForces) do
 				local objToRemove = vehicleSeat:FindFirstChild(name)
 				if objToRemove then
 					objToRemove:Destroy()
 				end
 			end
 
-			-- Reset vehicle state
-			vehicleSeat.Anchored = false
-			vehicleSeat:SetAttribute("PositionLocked", false)
+			-- DON'T reset these - preserve the vehicle's state:
+			-- vehicleSeat:SetAttribute("PositionLocked", false) -- KEEP THIS
+			-- vehicleSeat:SetAttribute("GravityCompensation", 0.8) -- KEEP THIS
+
+			-- Only reset physical movement
 			vehicleSeat.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
 			vehicleSeat.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
 
-			-- Reset rotation to upright after a short delay
-			task.spawn(function()
-				task.wait(0.2)
-				if vehicleSeat and vehicleSeat.Parent then
-					local position = vehicleSeat.Position
-					local uprightCFrame = CFrame.new(position, position + Vector3.new(0, 0, -1))
-					vehicleSeat.CFrame = uprightCFrame
-					vehicleSeat.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-					print("SERVER: Reset", vehicleSeat.Name, "rotation to upright")
-				end
-			end)
+			print("SERVER: Cleaned up player forces for", vehicleSeat.Name, "- state preserved")
 		elseif command == true then
-			-- Enable hover
+			-- Enable hover for THIS specific vehicle
 			vehicleSeat:SetAttribute("GravityCompensation", 1.0)
-			vehicleSeat:SetAttribute("PositionLocked", false)
 			vehicleSeat.Anchored = false
 			print("SERVER: Hover enabled for", vehicleSeat.Name, "by", player.Name)
 		elseif command == false then
-			-- Disable hover
+			-- Disable hover for THIS specific vehicle
 			vehicleSeat:SetAttribute("GravityCompensation", 0.8)
-			vehicleSeat:SetAttribute("PositionLocked", false)
+			vehicleSeat:SetAttribute("PositionLocked", false) -- Can't be locked if not hovering
 			vehicleSeat.Anchored = false
 			print("SERVER: Hover disabled for", vehicleSeat.Name, "by", player.Name)
 		end
