@@ -6,6 +6,7 @@ local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
 
 -- Wait for RemoteEvents
 local remoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
@@ -43,6 +44,99 @@ local keysPressed = {
 
 -- Table to store seat connections
 local seatConnections = {} -- Store RBXScriptConnection objects by seat
+
+-- Function to handle turret rotation
+local function handleTurretRotation(vehicleSeat, seatType)
+	if not vehicleSeat or not vehicleSeat:IsA("VehicleSeat") then
+		return
+	end
+
+	-- Get mouse position
+	local mouse = player:GetMouse()
+	
+	-- Calculate screen center and mouse offsets
+	local screenCenterX = camera.ViewportSize.X / 2
+	local screenCenterY = camera.ViewportSize.Y / 2
+	local mouseOffsetX = mouse.X - screenCenterX
+	local mouseOffsetY = mouse.Y - screenCenterY
+	
+	-- Normalize the offsets to rotation speeds (-1 to 1)
+	local maxOffsetX = screenCenterX
+	local normalizedOffsetX = math.clamp(mouseOffsetX / maxOffsetX, -1, 1)
+	
+	-- Create BodyAngularVelocity if needed
+	local bodyAngular = vehicleSeat:FindFirstChild("TurretAngular")
+	if not bodyAngular then
+		bodyAngular = Instance.new("BodyAngularVelocity")
+		bodyAngular.Name = "TurretAngular"
+		bodyAngular.Parent = vehicleSeat
+	end
+	
+	local rotationSpeed = 5 -- Adjust this value for sensitivity
+	
+	if seatType == "turret" then
+		-- Single axis turret - Y-axis rotation only (left/right)
+		local yRotation = -normalizedOffsetX * rotationSpeed
+		bodyAngular.AngularVelocity = Vector3.new(0, yRotation, 0)
+		bodyAngular.MaxTorque = Vector3.new(0, math.huge, 0)
+	elseif seatType == "2xturret" then
+		-- Dual axis turret - face the mouse position in 3D space with deadzone
+		local deadZoneRadius = 50 -- Pixels from center
+		local distanceFromCenter = math.sqrt(mouseOffsetX^2 + mouseOffsetY^2)
+		
+		if distanceFromCenter < deadZoneRadius then
+			-- Inside deadzone - no rotation
+			bodyAngular.AngularVelocity = Vector3.new(0, 0, 0)
+		else
+			-- Outside deadzone - face the mouse position
+			-- Create a ray from camera through mouse position
+			local unitRay = camera:ScreenPointToRay(mouse.X, mouse.Y)
+			
+			-- Cast ray to find world position
+			local raycastParams = RaycastParams.new()
+			raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+			raycastParams.FilterDescendantsInstances = {vehicleSeat.Parent} -- Don't hit the vehicle itself
+			
+			local raycastResult = workspace:Raycast(unitRay.Origin, unitRay.Direction * 1000, raycastParams)
+			local targetPosition
+			
+			if raycastResult then
+				targetPosition = raycastResult.Position
+			else
+				-- If no hit, use a point far in the direction
+				targetPosition = unitRay.Origin + unitRay.Direction * 1000
+			end
+			
+			-- Calculate direction from seat to target
+			local seatPosition = vehicleSeat.Position
+			local direction = (targetPosition - seatPosition).Unit
+			
+			-- Get current seat forward direction
+			local currentForward = vehicleSeat.CFrame.LookVector
+			
+			-- Calculate angular velocity needed to face the target
+			local cross = currentForward:Cross(direction)
+			local dot = currentForward:Dot(direction)
+			
+			-- Convert to angular velocity with speed control
+			local angularSpeed = 8 -- Adjust for tracking speed
+			local targetAngularVelocity = cross * angularSpeed * (1 - dot)
+			
+			-- Limit pitch to prevent flipping upside down
+			local maxPitch = 1.2 -- About 70 degrees
+			targetAngularVelocity = Vector3.new(
+				math.clamp(targetAngularVelocity.X, -maxPitch, maxPitch),
+				targetAngularVelocity.Y,
+				0 -- No roll
+			)
+			
+			bodyAngular.AngularVelocity = targetAngularVelocity
+			bodyAngular.MaxTorque = Vector3.new(math.huge, math.huge, 0) -- Allow X and Y rotation
+		end
+	end
+	
+	bodyAngular.P = 10000
+end
 
 -- Get UI elements from PlayerGui (they're copied from StarterGui automatically)
 local playerGui = player:WaitForChild("PlayerGui")
@@ -182,29 +276,41 @@ local function applyRotationWithPitchLock()
 		return
 	end
 
+	-- Get seat type with additional nil check
+	local seatType = "cruiser" -- Default value
+	if seat and seat.GetAttribute then
+		seatType = seat:GetAttribute("seattype") or "cruiser"
+	end
+
 	-- If position is locked, remove rotation controls
 	if isPositionLocked then
 		for _, child in ipairs(seat:GetChildren()) do
-			if child.ClassName == "BodyAngularVelocity" and child.Name == "ControlAngular" then
+			if child.ClassName == "BodyAngularVelocity" and (child.Name == "ControlAngular" or child.Name == "TurretAngular") then
 				child:Destroy()
 			end
 		end
 		return
 	end
 
-	-- Get or create rotation control
-	local bodyAngularVelocity = seat:FindFirstChild("ControlAngular")
-	if not bodyAngularVelocity then
-		bodyAngularVelocity = Instance.new("BodyAngularVelocity")
-		bodyAngularVelocity.Name = "ControlAngular"
-		bodyAngularVelocity.Parent = seat
-	end
+	-- Handle rotation based on seat type
+	if seatType == "cruiser" then
+		-- Normal cruiser rotation with Q/E and A/D keys
+		local bodyAngularVelocity = seat:FindFirstChild("ControlAngular")
+		if not bodyAngularVelocity then
+			bodyAngularVelocity = Instance.new("BodyAngularVelocity")
+			bodyAngularVelocity.Name = "ControlAngular"
+			bodyAngularVelocity.Parent = seat
+		end
 
-	local rotateSpeed = seat:GetAttribute("RotateSpeed") or DEFAULT_ROTATE_SPEED
-	local targetAngularVelocity = Vector3.new(0, rotate * rotateSpeed * 10, 0)
-	bodyAngularVelocity.AngularVelocity = targetAngularVelocity
-	bodyAngularVelocity.MaxTorque = Vector3.new(50000, 50000, 50000)
-	bodyAngularVelocity.P = 10000
+		local rotateSpeed = seat:GetAttribute("RotateSpeed") or DEFAULT_ROTATE_SPEED
+		local targetAngularVelocity = Vector3.new(0, rotate * rotateSpeed * 10, 0)
+		bodyAngularVelocity.AngularVelocity = targetAngularVelocity
+		bodyAngularVelocity.MaxTorque = Vector3.new(50000, 50000, 50000)
+		bodyAngularVelocity.P = 10000
+	elseif seatType == "turret" or seatType == "2xturret" then
+		-- Turret rotation follows mouse movement
+		handleTurretRotation(seat, seatType)
+	end
 end
 
 -- Force restore function

@@ -129,6 +129,11 @@ end
 local function maintainHover()
 	for _, obj in pairs(workspace:GetDescendants()) do
 		if obj:IsA("VehicleSeat") then
+			-- Initialize seattype attribute if not set
+			if not obj:GetAttribute("seattype") then
+				obj:SetAttribute("seattype", "cruiser") -- Default to cruiser
+			end
+			
 			local gravComp = obj:GetAttribute("GravityCompensation")
 			local positionLocked = obj:GetAttribute("PositionLocked")
 
