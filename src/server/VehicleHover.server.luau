@@ -255,6 +255,18 @@ local function maintainHover()
 	end
 end
 
+-- Initialize chamber parts with ammotype attribute
+local function initializeChambers()
+	for _, obj in pairs(workspace:GetDescendants()) do
+		if obj:IsA("Part") and obj.Name == "chamber" then
+			-- Initialize ammotype attribute for chamber parts if not set
+			if not obj:GetAttribute("ammotype") then
+				obj:SetAttribute("ammotype", "standard") -- Default to standard ammo
+			end
+		end
+	end
+end
+
 -- Run hover maintenance less frequently to reduce interference
 local lastUpdate = 0
 RunService.Heartbeat:Connect(function()
@@ -262,5 +274,6 @@ RunService.Heartbeat:Connect(function()
 	if now - lastUpdate >= 0.2 then -- Every 0.2 seconds to reduce interference
 		lastUpdate = now
 		maintainHover()
+		initializeChambers()
 	end
 end)

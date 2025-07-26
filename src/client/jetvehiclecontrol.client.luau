@@ -45,6 +45,39 @@ local keysPressed = {
 -- Table to store seat connections
 local seatConnections = {} -- Store RBXScriptConnection objects by seat
 
+-- Function to create explosion effect
+local function createExplosion(position, blastRadius, blastPressure)
+	-- Create explosion instance
+	local explosion = Instance.new("Explosion")
+	explosion.Position = position
+	explosion.BlastRadius = blastRadius or 20
+	explosion.BlastPressure = blastPressure or 500000
+	explosion.Parent = workspace
+	
+	-- Add visual effects
+	local explosionPart = Instance.new("Part")
+	explosionPart.Name = "ExplosionEffect"
+	explosionPart.Size = Vector3.new(1, 1, 1)
+	explosionPart.Position = position
+	explosionPart.Anchored = true
+	explosionPart.CanCollide = false
+	explosionPart.Transparency = 1
+	explosionPart.Parent = workspace
+	
+	-- Add explosion sound
+	local explosionSound = Instance.new("Sound")
+	explosionSound.SoundId = "rbxasset://sounds/electronicpingshort.wav" -- Basic explosion sound
+	explosionSound.Volume = 1
+	explosionSound.Pitch = 0.5
+	explosionSound.Parent = explosionPart
+	explosionSound:Play()
+	
+	-- Clean up effect part after sound finishes
+	game:GetService("Debris"):AddItem(explosionPart, 3)
+	
+	print("High explosive detonated at", position, "with blast radius", blastRadius)
+end
+
 -- Function to fire cannon projectile
 local function fireCannon(vehicleSeat)
 	if not vehicleSeat or not vehicleSeat:IsA("VehicleSeat") then
@@ -63,27 +96,59 @@ local function fireCannon(vehicleSeat)
 		return
 	end
 	
+	-- Get ammo type from chamber part
+	local ammoType = chamber:GetAttribute("ammotype") or "standard"
+	
 	-- Get firing direction (seat's forward direction)
 	local fireDirection = vehicleSeat.CFrame.LookVector
 	local firePosition = chamber.Position
 	
-	-- Create projectile
+	-- Create projectile with properties based on ammo type
 	local projectile = Instance.new("Part")
 	projectile.Name = "CannonProjectile"
 	projectile.Size = Vector3.new(0.5, 0.5, 2) -- Small cannon ball
 	projectile.Shape = Enum.PartType.Cylinder
 	projectile.Material = Enum.Material.Metal
-	projectile.BrickColor = BrickColor.new("Dark stone grey")
+	
+	-- Set appearance based on ammo type
+	if ammoType == "high_explosive" then
+		projectile.BrickColor = BrickColor.new("Bright red") -- Red for explosive
+		projectile.Name = "ExplosiveProjectile"
+	else
+		projectile.BrickColor = BrickColor.new("Dark stone grey") -- Standard color
+	end
+	
 	projectile.Position = firePosition + fireDirection * 3 -- Spawn slightly in front
 	projectile.CFrame = CFrame.lookAt(projectile.Position, projectile.Position + fireDirection)
 	projectile.CanCollide = true
 	projectile.Parent = workspace
+	
+	-- Store ammo type in projectile for collision detection
+	projectile:SetAttribute("ammotype", ammoType)
 	
 	-- Add velocity to projectile
 	local bodyVelocity = Instance.new("BodyVelocity")
 	bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
 	bodyVelocity.Velocity = fireDirection * 200 -- Projectile speed
 	bodyVelocity.Parent = projectile
+	
+	-- Add collision detection for explosive projectiles
+	if ammoType == "high_explosive" then
+		local connection
+		connection = projectile.Touched:Connect(function(hit)
+			-- Don't explode on the firing vehicle
+			if hit:IsDescendantOf(vehicleSeat.Parent) then
+				return
+			end
+			
+			-- Create explosion at impact point
+			createExplosion(projectile.Position, 20, 500000)
+			
+			-- Clean up projectile and connection
+			connection:Disconnect()
+			projectile:Destroy()
+		end)
+	end
 	
 	-- Add sound effect (optional)
 	local fireSound = Instance.new("Sound")
