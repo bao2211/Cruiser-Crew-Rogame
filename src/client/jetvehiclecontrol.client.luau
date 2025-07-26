@@ -45,6 +45,59 @@ local keysPressed = {
 -- Table to store seat connections
 local seatConnections = {} -- Store RBXScriptConnection objects by seat
 
+-- Function to fire cannon projectile
+local function fireCannon(vehicleSeat)
+	if not vehicleSeat or not vehicleSeat:IsA("VehicleSeat") then
+		return
+	end
+	
+	-- Find the chamber block in the vehicle's parent model
+	local vehicleModel = vehicleSeat.Parent
+	if not vehicleModel then
+		return
+	end
+	
+	local chamber = vehicleModel:FindFirstChild("chamber")
+	if not chamber then
+		print("WARNING: No 'chamber' block found in vehicle model for cannon firing")
+		return
+	end
+	
+	-- Get firing direction (seat's forward direction)
+	local fireDirection = vehicleSeat.CFrame.LookVector
+	local firePosition = chamber.Position
+	
+	-- Create projectile
+	local projectile = Instance.new("Part")
+	projectile.Name = "CannonProjectile"
+	projectile.Size = Vector3.new(0.5, 0.5, 2) -- Small cannon ball
+	projectile.Shape = Enum.PartType.Cylinder
+	projectile.Material = Enum.Material.Metal
+	projectile.BrickColor = BrickColor.new("Dark stone grey")
+	projectile.Position = firePosition + fireDirection * 3 -- Spawn slightly in front
+	projectile.CFrame = CFrame.lookAt(projectile.Position, projectile.Position + fireDirection)
+	projectile.CanCollide = true
+	projectile.Parent = workspace
+	
+	-- Add velocity to projectile
+	local bodyVelocity = Instance.new("BodyVelocity")
+	bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+	bodyVelocity.Velocity = fireDirection * 200 -- Projectile speed
+	bodyVelocity.Parent = projectile
+	
+	-- Add sound effect (optional)
+	local fireSound = Instance.new("Sound")
+	fireSound.SoundId = "rbxasset://sounds/impact_water.mp3" -- Basic sound
+	fireSound.Volume = 0.5
+	fireSound.Parent = chamber
+	fireSound:Play()
+	
+	-- Clean up projectile after 10 seconds
+	game:GetService("Debris"):AddItem(projectile, 10)
+	
+	print("Cannon fired from", chamber.Name, "in direction", fireDirection)
+end
+
 -- Function to handle turret rotation
 local function handleTurretRotation(vehicleSeat, seatType)
 	if not vehicleSeat or not vehicleSeat:IsA("VehicleSeat") then
@@ -785,6 +838,84 @@ player.CharacterAdded:Connect(function()
 	setupSeatDetection()
 end)
 
+-- Input handling for weapon firing and controls
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		-- Left mouse click - check for weapon firing
+		if seat and isInVehicle then
+			local weaponType = seat:GetAttribute("weapontype")
+			if weaponType == "Cannon" then
+				fireCannon(seat)
+			end
+		end
+	elseif input.KeyCode == Enum.KeyCode.W then
+		keysPressed.W = true
+	elseif input.KeyCode == Enum.KeyCode.A then
+		keysPressed.A = true
+	elseif input.KeyCode == Enum.KeyCode.S then
+		keysPressed.S = true
+	elseif input.KeyCode == Enum.KeyCode.D then
+		keysPressed.D = true
+	elseif input.KeyCode == Enum.KeyCode.Q then
+		keysPressed.Q = true
+	elseif input.KeyCode == Enum.KeyCode.E then
+		keysPressed.E = true
+	elseif input.KeyCode == Enum.KeyCode.X then
+		keysPressed.X = true
+	elseif input.KeyCode == Enum.KeyCode.C then
+		keysPressed.C = true
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	
+	if input.KeyCode == Enum.KeyCode.W then
+		keysPressed.W = false
+	elseif input.KeyCode == Enum.KeyCode.A then
+		keysPressed.A = false
+	elseif input.KeyCode == Enum.KeyCode.S then
+		keysPressed.S = false
+	elseif input.KeyCode == Enum.KeyCode.D then
+		keysPressed.D = false
+	elseif input.KeyCode == Enum.KeyCode.Q then
+		keysPressed.Q = false
+	elseif input.KeyCode == Enum.KeyCode.E then
+		keysPressed.E = false
+	elseif input.KeyCode == Enum.KeyCode.X then
+		keysPressed.X = false
+	elseif input.KeyCode == Enum.KeyCode.C then
+		keysPressed.C = false
+	end
+end)
+
+-- Update control variables based on key states
+local function updateControlsFromKeys()
+	if not seat or not isInVehicle then
+		return
+	end
+	
+	-- Movement controls (WASD)
+	throttle = 0
+	steer = 0
+	if keysPressed.W then throttle = throttle + 1 end
+	if keysPressed.S then throttle = throttle - 1 end
+	if keysPressed.A then steer = steer - 1 end
+	if keysPressed.D then steer = steer + 1 end
+	
+	-- Rotation controls (Q/E)
+	rotate = 0
+	if keysPressed.Q or keysPressed.A then rotate = rotate - 1 end
+	if keysPressed.E or keysPressed.D then rotate = rotate + 1 end
+	
+	-- Vertical thrust (X/C)
+	verticalThrust = 0
+	if keysPressed.X then verticalThrust = verticalThrust + 1 end
+	if keysPressed.C then verticalThrust = verticalThrust - 1 end
+end
+
 if player.Character then
 	setupSeatDetection()
 end
@@ -801,6 +932,9 @@ RunService.RenderStepped:Connect(function()
 	end
 
 	if seat and actuallyInSeat then
+		-- Update controls from key states
+		updateControlsFromKeys()
+		
 		if tick() % 1 < 0.016 then
 			debugVehicleState()
 		end

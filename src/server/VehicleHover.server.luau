@@ -134,6 +134,11 @@ local function maintainHover()
 				obj:SetAttribute("seattype", "cruiser") -- Default to cruiser
 			end
 			
+			-- Initialize weapontype attribute if not set
+			if not obj:GetAttribute("weapontype") then
+				obj:SetAttribute("weapontype", "None") -- Default to no weapon
+			end
+			
 			local gravComp = obj:GetAttribute("GravityCompensation")
 			local positionLocked = obj:GetAttribute("PositionLocked")
 
