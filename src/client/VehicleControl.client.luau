@@ -276,7 +276,7 @@ local function handleTurretRotation(vehicleSeat, seatType)
 		bodyAngular.AngularVelocity = Vector3.new(0, yRotation, 0)
 		bodyAngular.MaxTorque = Vector3.new(0, math.huge, 0)
 	elseif seatType == "2xturret" then
-		-- Dual axis turret - face the mouse position in 3D space with deadzone
+		-- Dual axis turret - make turret face where mouse is pointing
 		local deadZoneRadius = 50 -- Pixels from center
 		local distanceFromCenter = math.sqrt(mouseOffsetX^2 + mouseOffsetY^2)
 		
@@ -284,42 +284,26 @@ local function handleTurretRotation(vehicleSeat, seatType)
 			-- Inside deadzone - no rotation
 			bodyAngular.AngularVelocity = Vector3.new(0, 0, 0)
 		else
-			-- Outside deadzone - face the mouse position
+			-- Outside deadzone - make turret face mouse direction
 			-- Create a ray from camera through mouse position
 			local unitRay = camera:ScreenPointToRay(mouse.X, mouse.Y)
 			
-			-- Cast ray to find world position
-			local raycastParams = RaycastParams.new()
-			raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-			raycastParams.FilterDescendantsInstances = {vehicleSeat.Parent} -- Don't hit the vehicle itself
+			-- Calculate target direction (where mouse is pointing)
+			local targetDirection = unitRay.Direction.Unit
 			
-			local raycastResult = workspace:Raycast(unitRay.Origin, unitRay.Direction * 1000, raycastParams)
-			local targetPosition
-			
-			if raycastResult then
-				targetPosition = raycastResult.Position
-			else
-				-- If no hit, use a point far in the direction
-				targetPosition = unitRay.Origin + unitRay.Direction * 1000
-			end
-			
-			-- Calculate direction from seat to target
-			local seatPosition = vehicleSeat.Position
-			local direction = (targetPosition - seatPosition).Unit
-			
-			-- Get current seat forward direction
+			-- Get current turret forward direction
 			local currentForward = vehicleSeat.CFrame.LookVector
 			
-			-- Calculate angular velocity needed to face the target
-			local cross = currentForward:Cross(direction)
-			local dot = currentForward:Dot(direction)
+			-- Calculate the rotation needed to face the target
+			local cross = currentForward:Cross(targetDirection)
+			local dot = currentForward:Dot(targetDirection)
 			
-			-- Convert to angular velocity with speed control
-			local angularSpeed = 8 -- Adjust for tracking speed
+			-- Convert to angular velocity
+			local angularSpeed = 5 -- Tracking speed
 			local targetAngularVelocity = cross * angularSpeed * (1 - dot)
 			
-			-- Limit pitch to prevent flipping upside down
-			local maxPitch = 1.2 -- About 70 degrees
+			-- Limit pitch to prevent flipping
+			local maxPitch = 1.5
 			targetAngularVelocity = Vector3.new(
 				math.clamp(targetAngularVelocity.X, -maxPitch, maxPitch),
 				targetAngularVelocity.Y,
@@ -327,7 +311,7 @@ local function handleTurretRotation(vehicleSeat, seatType)
 			)
 			
 			bodyAngular.AngularVelocity = targetAngularVelocity
-			bodyAngular.MaxTorque = Vector3.new(math.huge, math.huge, 0) -- Allow X and Y rotation
+			bodyAngular.MaxTorque = Vector3.new(math.huge, math.huge, 0)
 		end
 	end
 	
@@ -755,6 +739,14 @@ local function updateControlValues()
 		verticalThrust = -1
 	else
 		verticalThrust = 0
+	end
+	
+	-- Handle turret rotation if this is a turret seat
+	if seat then
+		local weaponType = seat:GetAttribute("weapontype") or "None"
+		if weaponType == "turret" or weaponType == "2xturret" then
+			handleTurretRotation(seat, weaponType)
+		end
 	end
 end
 

@@ -47,6 +47,11 @@ local function initializeChambers()
 				obj:SetAttribute("detect_range", 15) -- Default proximity detection range
 			end
 			
+			-- Initialize reload time if not set
+			if not obj:GetAttribute("reload") then
+				obj:SetAttribute("reload", 1.0) -- Default reload time in seconds
+			end
+			
 			-- Initialize weapon type if not set
 			if not obj:GetAttribute("weapontype") then
 				obj:SetAttribute("weapontype", "Cannon") -- Default weapon type
@@ -90,6 +95,11 @@ local function initializeVehicleSeats()
 			-- Initialize weapontype attribute if not set
 			if not obj:GetAttribute("weapontype") then
 				obj:SetAttribute("weapontype", "None") -- Default to no weapon
+			end
+			
+			-- Initialize aiturret attribute if not set
+			if not obj:GetAttribute("aiturret") then
+				obj:SetAttribute("aiturret", false) -- Default AI turret disabled
 			end
 			
 			-- Initialize hover attributes if not set

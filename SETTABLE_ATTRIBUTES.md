@@ -32,6 +32,7 @@ This document lists all user-configurable attributes that can be set on various 
 | Attribute | Type | Default | Options | Description |
 |-----------|------|---------|---------|-------------|
 | `weapontype` | string | "None" | "None", "Cannon" | Enables weapon firing capability |
+| `aiturret` | boolean | false | true, false | Enables AI automatic target detection and firing |
 
 ---
 
@@ -47,6 +48,7 @@ This document lists all user-configurable attributes that can be set on various 
 | `armor_pen` | number | 10 | Any positive number | Armor penetration value |
 | `explosion_radius` | number | 20 | Any positive number | Radius (studs) of explosion area effect |
 | `explosive_radius_damage` | number | 50 | Any positive number | Base damage dealt to parts within explosion radius |
+| `reload` | number | 1.0 | Any positive number | Reload time (seconds) between shots for AI turrets |
 
 **Ammo Type Behaviors:**
 - **"standard"**: Dark grey projectiles, deal direct damage on penetration, no explosion
@@ -101,6 +103,21 @@ vehicleSeat:SetAttribute("weapontype", "Cannon")
 chamber:SetAttribute("ammotype", "high_explosive")
 chamber:SetAttribute("armor_pen", 25)
 chamber:SetAttribute("afterpen", 0.3)
+```
+
+### AI Turret System
+```lua
+-- VehicleSeat configuration
+vehicleSeat:SetAttribute("aiturret", true)
+vehicleSeat:SetAttribute("weapontype", "Cannon")
+
+-- Chamber configuration
+chamber:SetAttribute("reload", 0.5) -- Fast firing
+chamber:SetAttribute("ammotype", "high_explosive")
+chamber:SetAttribute("armor_pen", 15)
+
+-- Create Airange part in the same parent model as VehicleSeat
+-- Size the Airange part to define detection area
 ```
 
 ### Anti-Aircraft Gun

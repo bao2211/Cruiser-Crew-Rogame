@@ -76,7 +76,7 @@ local function createExplosion(position, explosionRadius, explosionDamage, armor
 	-- Find all parts within explosion radius and apply damage
 	for _, obj in pairs(workspace:GetPartBoundsInBox(CFrame.new(position), Vector3.new(explosionRadius * 2, explosionRadius * 2, explosionRadius * 2))) do
 		if obj:IsA("BasePart") and obj ~= explosionSphere then
-			if not (obj.Name == "ExplosionRadius" or obj.Name:find("Projectile") or obj.Name:find("Explosion")) then
+			if not (obj.Name == "ExplosionRadius" or obj.Name:find("Projectile") or obj.Name:find("Explosion") or obj.Name == "Airange") then
 				local distance = (obj.Position - position).Magnitude
 				if distance <= explosionRadius then
 					local partArmor = tonumber(obj:GetAttribute("armor")) or 0
@@ -290,6 +290,11 @@ local function fireCannon(player, vehicleSeat, chamber)
 		
 		-- Ignore other projectiles and explosion spheres
 		if hit.Name:find("Projectile") or hit.Name == "ExplosionRadius" or hit:GetAttribute("is_explosion_sphere") then
+			return
+		end
+		
+		-- Ignore AI turret range detection parts
+		if hit.Name == "Airange" then
 			return
 		end
 		
