@@ -11,6 +11,7 @@ local camera = workspace.CurrentCamera
 -- Wait for RemoteEvents
 local remoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 local hoverToggleEvent = remoteEvents:WaitForChild("HoverToggle")
+local fireWeaponEvent = remoteEvents:WaitForChild("FireWeapon")
 
 -- Default values
 local DEFAULT_FORCE_MAGNITUDE = 3000
@@ -45,40 +46,9 @@ local keysPressed = {
 -- Table to store seat connections
 local seatConnections = {} -- Store RBXScriptConnection objects by seat
 
--- Function to create explosion effect
-local function createExplosion(position, blastRadius, blastPressure)
-	-- Create explosion instance
-	local explosion = Instance.new("Explosion")
-	explosion.Position = position
-	explosion.BlastRadius = blastRadius or 20
-	explosion.BlastPressure = blastPressure or 500000
-	explosion.Parent = workspace
-	
-	-- Add visual effects
-	local explosionPart = Instance.new("Part")
-	explosionPart.Name = "ExplosionEffect"
-	explosionPart.Size = Vector3.new(1, 1, 1)
-	explosionPart.Position = position
-	explosionPart.Anchored = true
-	explosionPart.CanCollide = false
-	explosionPart.Transparency = 1
-	explosionPart.Parent = workspace
-	
-	-- Add explosion sound
-	local explosionSound = Instance.new("Sound")
-	explosionSound.SoundId = "rbxasset://sounds/electronicpingshort.wav" -- Basic explosion sound
-	explosionSound.Volume = 1
-	explosionSound.Pitch = 0.5
-	explosionSound.Parent = explosionPart
-	explosionSound:Play()
-	
-	-- Clean up effect part after sound finishes
-	game:GetService("Debris"):AddItem(explosionPart, 3)
-	
-	print("High explosive detonated at", position, "with blast radius", blastRadius)
-end
+-- Note: Explosions are now handled server-side for security and synchronization
 
--- Function to fire cannon projectile
+-- Function to fire cannon projectile (now uses RemoteEvent)
 local function fireCannon(vehicleSeat)
 	if not vehicleSeat or not vehicleSeat:IsA("VehicleSeat") then
 		return
@@ -92,75 +62,27 @@ local function fireCannon(vehicleSeat)
 	
 	local chamber = vehicleModel:FindFirstChild("chamber")
 	if not chamber then
-		print("WARNING: No 'chamber' block found in vehicle model for cannon firing")
+		print("CLIENT: No 'chamber' block found in vehicle model for cannon firing")
 		return
 	end
 	
-	-- Get ammo type from chamber part
+	-- Get ammo type for client feedback
 	local ammoType = chamber:GetAttribute("ammotype") or "standard"
 	
-	-- Get firing direction (seat's forward direction)
-	local fireDirection = vehicleSeat.CFrame.LookVector
-	local firePosition = chamber.Position
+	-- Send fire request to server
+	fireWeaponEvent:FireServer(vehicleSeat)
 	
-	-- Create projectile with properties based on ammo type
-	local projectile = Instance.new("Part")
-	projectile.Name = "CannonProjectile"
-	projectile.Size = Vector3.new(0.5, 0.5, 2) -- Small cannon ball
-	projectile.Shape = Enum.PartType.Cylinder
-	projectile.Material = Enum.Material.Metal
-	
-	-- Set appearance based on ammo type
-	if ammoType == "high_explosive" then
-		projectile.BrickColor = BrickColor.new("Bright red") -- Red for explosive
-		projectile.Name = "ExplosiveProjectile"
-	else
-		projectile.BrickColor = BrickColor.new("Dark stone grey") -- Standard color
-	end
-	
-	projectile.Position = firePosition + fireDirection * 3 -- Spawn slightly in front
-	projectile.CFrame = CFrame.lookAt(projectile.Position, projectile.Position + fireDirection)
-	projectile.CanCollide = true
-	projectile.Parent = workspace
-	
-	-- Store ammo type in projectile for collision detection
-	projectile:SetAttribute("ammotype", ammoType)
-	
-	-- Add velocity to projectile
-	local bodyVelocity = Instance.new("BodyVelocity")
-	bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-	bodyVelocity.Velocity = fireDirection * 200 -- Projectile speed
-	bodyVelocity.Parent = projectile
-	
-	-- Add collision detection for explosive projectiles
-	if ammoType == "high_explosive" then
-		local connection
-		connection = projectile.Touched:Connect(function(hit)
-			-- Don't explode on the firing vehicle
-			if hit:IsDescendantOf(vehicleSeat.Parent) then
-				return
-			end
-			
-			-- Create explosion at impact point
-			createExplosion(projectile.Position, 20, 500000)
-			
-			-- Clean up projectile and connection
-			connection:Disconnect()
-			projectile:Destroy()
-		end)
-	end
-	
-	-- Add sound effect (optional)
+	-- Immediate client feedback - play sound
 	local fireSound = Instance.new("Sound")
-	fireSound.SoundId = "rbxasset://sounds/impact_water.mp3" -- Basic sound
+	fireSound.SoundId = "rbxasset://sounds/impact_water.mp3"
 	fireSound.Volume = 0.5
 	fireSound.Parent = chamber
 	fireSound:Play()
 	
-	-- Clean up projectile after 10 seconds
-	game:GetService("Debris"):AddItem(projectile, 10)
+	-- Auto-cleanup sound
+	game:GetService("Debris"):AddItem(fireSound, 3)
 	
-	print("Cannon fired from", chamber.Name, "in direction", fireDirection)
+	print("CLIENT: Fire request sent for", ammoType, "round from", chamber.Name)
 end
 
 -- Function to handle turret rotation
