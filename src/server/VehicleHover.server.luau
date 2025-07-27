@@ -27,19 +27,132 @@ end
 
 print("VehicleHover ServerScript started!")
 
+-- Explosion cooldown system to prevent infinite explosions
+local explosionCooldowns = {}
+local EXPLOSION_COOLDOWN_TIME = 0.5 -- 0.5 seconds between explosions at same position
+
 -- Weapon System Functions
-local function createExplosion(position, blastRadius, blastPressure)
-	-- Create explosion instance
+-- Forward declaration of functions
+local damagePart, destroyPart, createHealthBar
+
+local function createExplosion(position, explosionRadius, explosionDamage, armorPen)
+	-- Check explosion cooldown to prevent infinite explosions
+	local positionKey = string.format("%.1f,%.1f,%.1f", position.X, position.Y, position.Z)
+	local currentTime = tick()
+	
+	if explosionCooldowns[positionKey] and (currentTime - explosionCooldowns[positionKey]) < EXPLOSION_COOLDOWN_TIME then
+		print("SERVER: Explosion blocked by cooldown at", position)
+		return
+	end
+	
+	explosionCooldowns[positionKey] = currentTime
+	
+	-- Clean up old cooldown entries to prevent memory buildup
+	for key, time in pairs(explosionCooldowns) do
+		if (currentTime - time) > 10 then -- Remove entries older than 10 seconds
+			explosionCooldowns[key] = nil
+		end
+	end
+	-- Create visual explosion sphere (non-colliding, transparent)
+	local explosionSphere = Instance.new("Part")
+	explosionSphere.Name = "ExplosionRadius"
+	explosionSphere.Shape = Enum.PartType.Ball
+	explosionSphere.Material = Enum.Material.ForceField
+	explosionSphere.BrickColor = BrickColor.new("Bright red")
+	explosionSphere.Transparency = 0.7
+	explosionSphere.CanCollide = false
+	explosionSphere.CanTouch = false -- Prevent any touch events
+	explosionSphere.CanQuery = false -- Prevent raycasting hits
+	explosionSphere.Anchored = true
+	explosionSphere.Size = Vector3.new(explosionRadius * 2, explosionRadius * 2, explosionRadius * 2)
+	explosionSphere.Position = position
+	explosionSphere:SetAttribute("is_explosion_sphere", true)
+	explosionSphere.Parent = workspace
+	
+	-- Create standard explosion for visual/audio effects
 	local explosion = Instance.new("Explosion")
 	explosion.Position = position
-	explosion.BlastRadius = blastRadius or 20
-	explosion.BlastPressure = blastPressure or 500000
+	explosion.BlastRadius = 5 -- Small radius for visual effect only
+	explosion.BlastPressure = 0 -- No physics damage
 	explosion.Parent = workspace
 	
-	print("SERVER: Explosion created at", position, "with blast radius", blastRadius)
+	print("SERVER: Explosion created at", position, "with radius", explosionRadius, "damage", explosionDamage, "armor pen", armorPen)
+	
+	-- Find all parts within explosion radius
+	local partsInRadius = {}
+	for _, obj in pairs(workspace:GetPartBoundsInBox(CFrame.new(position), Vector3.new(explosionRadius * 2, explosionRadius * 2, explosionRadius * 2))) do
+		if obj:IsA("BasePart") and obj ~= explosionSphere then
+			-- Filter out explosion spheres, projectiles, and other explosion-related parts
+			if not (obj.Name == "ExplosionRadius" or 
+					obj.Name:find("Projectile") or 
+					obj.Name:find("Explosion") or
+					obj:IsA("Explosion")) then
+				
+				local distance = (obj.Position - position).Magnitude
+				if distance <= explosionRadius then
+					table.insert(partsInRadius, {part = obj, distance = distance})
+				end
+			end
+		end
+	end
+	
+	-- Apply damage to parts in radius based on armor
+	for _, partData in pairs(partsInRadius) do
+		local part = partData.part
+		local distance = partData.distance
+		
+		-- Get part armor
+		local partArmor = tonumber(part:GetAttribute("armor")) or 0
+		
+		-- Check if explosion can penetrate armor
+		if armorPen > partArmor then
+			-- Calculate damage falloff based on distance
+			local damageFalloff = math.max(0.1, 1 - (distance / explosionRadius))
+			local finalDamage = explosionDamage * damageFalloff
+			
+			print("SERVER: Explosion damaged", part.Name, "for", math.floor(finalDamage), "damage (distance:", math.floor(distance), "armor:", partArmor, ")")
+			damagePart(part, finalDamage)
+		else
+			print("SERVER: Explosion blocked by armor on", part.Name, "(armor:", partArmor, "vs pen:", armorPen, ")")
+		end
+	end
+	
+	-- Add unique identifier to track this specific sphere
+	local sphereId = tick() .. "_" .. math.random(1000, 9999)
+	explosionSphere:SetAttribute("sphere_id", sphereId)
+	explosionSphere:SetAttribute("created_time", tick())
+	
+	local Debris = game:GetService("Debris")
+	print("SERVER: Explosion sphere created with ID:", sphereId, "- will destroy in 3 seconds")
+	
+	-- Use Debris service for primary cleanup
+	Debris:AddItem(explosionSphere, 3)
+	
+	-- Create multiple backup cleanup methods
+	-- Backup 1: Direct reference timer
+	local sphereRef = explosionSphere
+	spawn(function()
+		wait(3.1)
+		if sphereRef and sphereRef.Parent then
+			print("SERVER: Backup timer 1 destroying sphere:", sphereId)
+			sphereRef:Destroy()
+		end
+	end)
+	
+	-- Backup 2: Find by name and attribute
+	spawn(function()
+		wait(3.2)
+		for _, obj in pairs(workspace:GetChildren()) do
+			if obj.Name == "ExplosionRadius" and obj:GetAttribute("sphere_id") == sphereId then
+				print("SERVER: Backup timer 2 destroying sphere:", sphereId)
+				obj:Destroy()
+				break
+			end
+		end
+	end)
 end
 
-local function createHealthBar(part)
+createHealthBar = function(part)
 	-- Remove existing health bar
 	local existingGui = part:FindFirstChild("HealthBarGui")
 	if existingGui then 
@@ -99,7 +212,34 @@ local function createHealthBar(part)
 	game:GetService("Debris"):AddItem(billboardGui, 3)
 end
 
-local function destroyPart(part)
+damagePart = function(part, damage)
+	if not part or not part:GetAttribute("health") then
+		return
+	end
+	
+	-- Don't damage parts that are already being destroyed
+	if part:GetAttribute("being_destroyed") then
+		return
+	end
+	
+	local currentHealth = tonumber(part:GetAttribute("health")) or 100
+	local newHealth = math.max(0, currentHealth - damage)
+	part:SetAttribute("health", newHealth)
+	
+	print("SERVER: Part", part.Name, "damaged for", damage, "health:", newHealth)
+	
+	-- Show health bar
+	createHealthBar(part)
+	
+	-- Destroy if health reaches 0
+	if newHealth <= 0 then
+		-- Mark as being destroyed to prevent further damage
+		part:SetAttribute("being_destroyed", true)
+		destroyPart(part)
+	end
+end
+
+destroyPart = function(part)
 	if not part or not part.Parent then
 		return
 	end
@@ -135,26 +275,6 @@ local function destroyPart(part)
 	end)
 end
 
-local function damagePart(part, damage)
-	if not part or not part:GetAttribute("health") then
-		return
-	end
-	
-	local currentHealth = tonumber(part:GetAttribute("health")) or 100
-	local newHealth = math.max(0, currentHealth - damage)
-	part:SetAttribute("health", newHealth)
-	
-	print("SERVER: Part", part.Name, "damaged for", damage, "health:", newHealth)
-	
-	-- Show health bar
-	createHealthBar(part)
-	
-	-- Destroy if health reaches 0
-	if newHealth <= 0 then
-		destroyPart(part)
-	end
-end
-
 local function createSound(parent, soundId, volume, pitch)
 	local sound = Instance.new("Sound")
 	sound.SoundId = soundId
@@ -183,6 +303,8 @@ local function fireCannon(player, vehicleSeat, chamber)
 	local damage = tonumber(chamber:GetAttribute("damage")) or 25
 	local afterPen = tonumber(chamber:GetAttribute("afterpen")) or 0.5
 	local airburstTime = tonumber(chamber:GetAttribute("airburst_time")) or 2.0
+	local explosionRadius = tonumber(chamber:GetAttribute("explosion_radius")) or 20
+	local explosionDamage = tonumber(chamber:GetAttribute("explosive_radius_damage")) or 50
 	
 	-- Get firing direction and position
 	local fireDirection = vehicleSeat.CFrame.LookVector
@@ -208,9 +330,6 @@ local function fireCannon(player, vehicleSeat, chamber)
 	elseif ammoType == "airburst" then
 		projectile.BrickColor = BrickColor.new("Bright yellow")
 		projectile.Name = "AirburstProjectile"
-	elseif ammoType == "high_penetration_explosive" then
-		projectile.BrickColor = BrickColor.new("Bright orange")
-		projectile.Name = "HighPenExplosiveProjectile"
 	else
 		projectile.BrickColor = BrickColor.new("Dark stone grey")
 	end
@@ -221,6 +340,7 @@ local function fireCannon(player, vehicleSeat, chamber)
 	projectile:SetAttribute("damage", damage)
 	projectile:SetAttribute("afterpen", afterPen)
 	projectile:SetAttribute("airburst_time", airburstTime)
+	projectile:SetAttribute("has_exploded", false) -- Flag to prevent multiple explosions
 	
 	-- Add velocity
 	local bodyVelocity = Instance.new("BodyVelocity")
@@ -233,9 +353,15 @@ local function fireCannon(player, vehicleSeat, chamber)
 		spawn(function()
 			wait(airburstTime)
 			if projectile and projectile.Parent then
-				print("SERVER: Airburst timer detonation!")
-				createExplosion(projectile.Position, 25, 600000)
-				projectile:Destroy()
+				local hasExploded = projectile:GetAttribute("has_exploded")
+				if not hasExploded then
+					projectile:SetAttribute("has_exploded", true)
+					print("SERVER: Airburst timer detonation!")
+					createExplosion(projectile.Position, explosionRadius, explosionDamage, armorPen)
+					projectile:Destroy()
+				else
+					print("SERVER: Airburst timer ignored - already exploded")
+				end
 			end
 		end)
 		
@@ -255,12 +381,19 @@ local function fireCannon(player, vehicleSeat, chamber)
 					end
 				end
 				
-				-- If parts found within 10 studs, explode
+				-- If parts found within 10 studs, explode (if not already exploded)
 				if #nearbyParts > 0 then
-					print("SERVER: Airburst proximity detonation! Found", #nearbyParts, "nearby parts")
-					createExplosion(projectile.Position, 25, 600000)
-					projectile:Destroy()
-					break
+					local hasExploded = projectile:GetAttribute("has_exploded")
+					if not hasExploded then
+						projectile:SetAttribute("has_exploded", true)
+						print("SERVER: Airburst proximity detonation! Found", #nearbyParts, "nearby parts")
+						createExplosion(projectile.Position, explosionRadius, explosionDamage, armorPen)
+						projectile:Destroy()
+						break
+					else
+						print("SERVER: Airburst proximity ignored - already exploded")
+						break
+					end
 				end
 			end
 		end)
@@ -271,18 +404,19 @@ local function fireCannon(player, vehicleSeat, chamber)
 	connection = projectile.Touched:Connect(function(hit)
 		-- Ignore the firing vehicle
 		if hit:IsDescendantOf(vehicleSeat.Parent) then
+			print("SERVER: Projectile ignored collision with", hit.Name, "(filtered out - self)")
 			return
 		end
 		
-		-- Ignore other projectiles
-		if hit.Name:find("Projectile") then
+		-- Ignore other projectiles and explosion spheres
+		if hit.Name:find("Projectile") or hit.Name == "ExplosionRadius" or hit:GetAttribute("is_explosion_sphere") or (hit.Material == Enum.Material.ForceField and hit.Shape == Enum.PartType.Ball) then
+			print("SERVER: Projectile ignored collision with", hit.Name, "(filtered out)")
 			return
 		end
 		
 		local projectileAmmoType = projectile:GetAttribute("ammotype")
 		local projectileArmorPen = tonumber(projectile:GetAttribute("armor_pen")) or 10
 		local projectileDamage = tonumber(projectile:GetAttribute("damage")) or 25
-		local projectileAfterPen = tonumber(projectile:GetAttribute("afterpen")) or 0.5
 		
 		local targetArmor = tonumber(hit:GetAttribute("armor")) or 0
 		
@@ -290,51 +424,64 @@ local function fireCannon(player, vehicleSeat, chamber)
 		
 		-- Handle different ammo types
 		if projectileAmmoType == "airburst" then
+			-- Airburst: Check if already exploded
+			local hasExploded = projectile:GetAttribute("has_exploded")
+			if hasExploded then
+				print("SERVER: Airburst already exploded, ignoring hit")
+				return
+			end
+			
 			-- Airburst explodes on any contact (also has proximity detection)
+			projectile:SetAttribute("has_exploded", true)
 			print("SERVER: Airburst round hit target! Exploding on contact")
-			createExplosion(projectile.Position, 25, 600000)
+			createExplosion(projectile.Position, explosionRadius, explosionDamage, armorPen)
 			connection:Disconnect()
 			projectile:Destroy()
 			return
 		elseif projectileAmmoType == "high_explosive" then
-			-- High explosive: Always explode on any hit
-			createSound(hit, "rbxasset://sounds/impact_water.mp3", 0.7, 1.0)
-			print("SERVER: High explosive round hit", hit.Name, "- exploding!")
-			createExplosion(projectile.Position, 20, 500000)
-			connection:Disconnect()
-			projectile:Destroy()
-			return
-		elseif projectileAmmoType == "high_penetration_explosive" then
-			-- High penetration explosive: Afterpen timer behavior
+			-- High explosive: Check if already exploded
+			local hasExploded = projectile:GetAttribute("has_exploded")
+			if hasExploded then
+				print("SERVER: High explosive already exploded, ignoring hit")
+				return
+			end
+			
+			-- Check armor penetration
 			if projectileArmorPen > targetArmor then
-				-- Penetrates armor - start afterpen timer
+				-- Penetrates - pass through and set up single delayed explosion
+				local afterpenDelay = tonumber(projectile:GetAttribute("afterpen")) or 0.5
 				if targetArmor > 0 then
 					createSound(hit, "rbxasset://sounds/impact_water.mp3", 0.7, 1.0)
-					print("SERVER: High-pen explosive penetrated armor! Exploding in", projectileAfterPen, "seconds")
+					print("SERVER: High explosive penetrated armor on", hit.Name, "- exploding in", afterpenDelay, "seconds (no direct damage)")
 				else
-					createSound(hit, "rbxasset://sounds/impact_water.mp3", 0.8, 1.2)
-					print("SERVER: High-pen explosive passed through unarmored part - exploding in", projectileAfterPen, "seconds")
+					print("SERVER: High explosive passed through unarmored", hit.Name, "- exploding in", afterpenDelay, "seconds (no direct damage)")
 				end
+				-- No direct damage - only explosion damage
 				
-				damagePart(hit, projectileDamage)
+				-- Mark as exploded to prevent multiple explosions
+				projectile:SetAttribute("has_exploded", true)
 				
-				-- Delayed explosion after penetration
+				-- Single delayed explosion
 				spawn(function()
-					wait(projectileAfterPen)
+					wait(afterpenDelay)
 					if projectile and projectile.Parent then
-						createExplosion(projectile.Position, 20, 500000)
+						print("SERVER: High explosive delayed detonation!")
+						createExplosion(projectile.Position, explosionRadius, explosionDamage, armorPen)
 						connection:Disconnect()
 						projectile:Destroy()
 					end
 				end)
 			else
-				-- Blocked by armor - explode on contact
-				createSound(hit, "rbxasset://sounds/electronicpingshort.wav", 0.5, 1.5)
-				print("SERVER: High-pen explosive blocked by armor - exploding on contact")
-				createExplosion(projectile.Position, 20, 500000)
+				-- Cannot penetrate - explode immediately on contact
+				projectile:SetAttribute("has_exploded", true)
+				createSound(hit, "rbxasset://sounds/electronicbeep.mp3", 0.5, 0.8)
+				print("SERVER: High explosive blocked by armor on", hit.Name, "- exploding on contact!")
+				createExplosion(projectile.Position, explosionRadius, explosionDamage, armorPen)
 				connection:Disconnect()
 				projectile:Destroy()
+				return
 			end
+
 		elseif projectileAmmoType == "standard" then
 			-- Standard round: Pass through and damage until blocked, then ricochet and destroy
 			if projectileArmorPen > targetArmor then
@@ -650,6 +797,16 @@ local function initializeChambers()
 			if not obj:GetAttribute("airburst_time") then
 				obj:SetAttribute("airburst_time", 2.0) -- Default airburst time
 			end
+			
+			-- Initialize explosion radius if not set
+			if not obj:GetAttribute("explosion_radius") then
+				obj:SetAttribute("explosion_radius", 20) -- Default explosion radius
+			end
+			
+			-- Initialize explosive radius damage if not set
+			if not obj:GetAttribute("explosive_radius_damage") then
+				obj:SetAttribute("explosive_radius_damage", 50) -- Default explosion damage
+			end
 		end
 	end
 end
@@ -686,5 +843,42 @@ RunService.Heartbeat:Connect(function()
 		maintainHover()
 		initializeChambers()
 		initializeParts()
+	end
+end)
+
+-- Global cleanup function to catch any missed explosion spheres
+local function cleanupOrphanedSpheres()
+	local currentTime = tick()
+	local cleanedCount = 0
+	
+	for _, obj in pairs(workspace:GetChildren()) do
+		if obj.Name == "ExplosionRadius" then
+			local createdTime = obj:GetAttribute("created_time")
+			local sphereId = obj:GetAttribute("sphere_id")
+			
+			if createdTime and (currentTime - createdTime) > 5 then
+				-- Sphere is older than 5 seconds, force cleanup
+				print("SERVER: Global cleanup destroying orphaned sphere:", sphereId or "unknown")
+				obj:Destroy()
+				cleanedCount = cleanedCount + 1
+			elseif not createdTime then
+				-- Sphere has no timestamp, probably old, clean it up
+				print("SERVER: Global cleanup destroying sphere without timestamp")
+				obj:Destroy()
+				cleanedCount = cleanedCount + 1
+			end
+		end
+	end
+	
+	if cleanedCount > 0 then
+		print("SERVER: Global cleanup removed", cleanedCount, "orphaned explosion spheres")
+	end
+end
+
+-- Run global cleanup every 10 seconds
+spawn(function()
+	while true do
+		wait(10)
+		cleanupOrphanedSpheres()
 	end
 end)

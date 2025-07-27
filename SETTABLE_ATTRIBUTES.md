@@ -40,16 +40,28 @@ This document lists all user-configurable attributes that can be set on various 
 ### Ammunition Configuration
 | Attribute | Type | Default | Options | Description |
 |-----------|------|---------|---------|-------------|
-| `ammotype` | string | "standard" | "standard", "high_explosive", "airburst", "high_penetration_explosive" | Projectile behavior type |
+| `ammotype` | string | "standard" | "standard", "high_explosive", "airburst" | Projectile behavior type |
 | `afterpen` | number | 0.5 | Any positive number | Delay (seconds) before HE explosion after armor penetration |
 | `airburst_time` | number | 2.0 | Any positive number | Time (seconds) before airburst explosion |
 | `armor_pen` | number | 10 | Any positive number | Armor penetration value |
+| `explosion_radius` | number | 20 | Any positive number | Radius (studs) of explosion area effect |
+| `explosive_radius_damage` | number | 50 | Any positive number | Base damage dealt to parts within explosion radius |
 
 **Ammo Type Behaviors:**
-- **"standard"**: Dark grey projectiles, penetrate/pass through, no explosion
-- **"high_explosive"**: Red projectiles, always explode on any contact
-- **"airburst"**: Yellow projectiles, explode after airburst_time OR on contact (also proximity detection within 10 studs)
-- **"high_penetration_explosive"**: Orange projectiles, afterpen timer behavior (explode after delay if penetrate, explode immediately if blocked)
+- **"standard"**: Dark grey projectiles, deal direct damage on penetration, no explosion
+- **"high_explosive"**: Red projectiles, no direct damage, explode after afterpen delay when penetrating or immediately when blocked
+- **"airburst"**: Yellow projectiles, no direct damage, explode after airburst_time OR on contact
+
+**Damage System:**
+- **Standard Rounds**: Deal direct damage to hit parts, pass through until blocked by armor
+- **All Explosive Rounds**: No direct damage, all damage comes from explosion sphere only
+- **Explosion Sphere**: Semi-transparent red sphere shows explosion area, auto-destroys after 3 seconds
+- **Armor-Based Explosion Damage**: Only parts with `armor < projectile_armor_pen` take explosion damage
+- **Distance Falloff**: Explosion damage decreases with distance from explosion center
+- **Damage Formula**: `final_damage = explosive_radius_damage × max(0.1, 1 - distance/explosion_radius)`
+- **Minimum Damage**: 10% of base damage at maximum range
+- **Sphere Duration**: Visual explosion sphere auto-destroys after exactly 3 seconds
+- **Sphere Cleanup**: Multiple backup systems ensure no permanent spheres remain
 
 ---
 
@@ -155,24 +167,103 @@ All attributes are automatically initialized with default values by the server i
 - Health bars appear above damaged parts showing current/max health
 - Health bars are color-coded: Green (>60%), Yellow (30-60%), Red (<30%)
 
-### Ammo Type Behaviors:
+### Updated Ammo Type Behaviors:
 
-- ammo: standard
-- when hit a part check that part armor if it is less than the ammo armor_pen then it will pass thought and deal damage to the part until it hit a part with armor greater than the ammo armor_pen then it will ricochet and not deal damage to the part and get destroyed
+**Standard Rounds:**
+- Deal direct damage to parts on penetration
+- Pass through parts where `armor_pen > part_armor`
+- Ricochet and destroy when blocked by armor
+- No explosion effects
+- Silent penetration through unarmored parts
 
--- ammo: high_explosive
-- when hit a part explode 
+**High Explosive Rounds:**
+- No direct damage to hit parts
+- Explode after 0.1 seconds when penetrating
+- Explode immediately when blocked by armor
+- All damage comes from explosion sphere
+- Area effect damage with distance falloff
 
--- ammo: airburst
-- when fire check around the bullet 10 stud if there a part then explode
+**Airburst Rounds:**
+- No direct damage to hit parts
+- Three explosion triggers: timer, contact, or proximity (10 studs)
+- Explode after `airburst_time` seconds OR on any contact
+- Proximity detection checks every 0.1 seconds
+- All damage comes from explosion sphere
 
--- ammo: high_penetration_explosive
-- when hit a part check that part armor if it is less then the ammo armor_pen then it will pass thought and start the afterpen timer when timer finish explode if it is more then the ammo armor_pen then it will not pass thought but explode on contact
+**High Penetration Explosive Rounds:**
+- No direct damage to hit parts
+- Explode after `afterpen` delay when penetrating
+- Explode immediately when blocked by armor
+- Designed to penetrate multiple armor layers before exploding
+- All damage comes from explosion sphere
 
 ### Damage and Destruction:
-- Parts take damage when penetrated by projectiles
+
+**Direct Damage (Standard Rounds Only):**
+- Standard rounds deal direct damage to parts they penetrate
 - Default damage: 25 health points per hit
+- Only applies when `armor_pen > part_armor`
+
+**Explosion Damage (All Explosive Rounds):**
+- Base damage from `explosive_radius_damage` attribute (default: 50)
+- Distance falloff: damage decreases with distance from explosion center
+- Minimum damage: 10% at edge of explosion radius
+- Only affects parts where `armor_pen > part_armor`
+
+**Part Destruction:**
 - Parts are destroyed when health ≤ 0
 - Destroyed parts fade to transparent over 3 seconds
 - All joints (welds, constraints) are removed during destruction
 - Health bars provide real-time visual feedback
+- Health bars are color-coded: Green (>60%), Yellow (30-60%), Red (<30%)
+
+---
+
+## Explosion System
+
+### Visual Effects:
+- **Explosion Sphere**: Semi-transparent red sphere shows blast radius
+- **Sphere Size**: Diameter = `explosion_radius × 2`
+- **Sphere Duration**: Auto-destroys after exactly 3 seconds
+- **Non-Interactive**: Projectiles pass through spheres without collision
+- **Multiple Cleanup Systems**: Debris service + backup timers + global cleanup
+
+### Explosion Prevention:
+- **Single Explosion Per Projectile**: Each bullet can only explode once
+- **Explosion Flag System**: `has_exploded` attribute prevents multiple explosions
+- **Cooldown System**: 0.5-second cooldown per explosion location
+- **Performance Optimized**: Prevents infinite explosion loops
+
+### Damage Calculation:
+```lua
+-- Explosion damage formula
+final_damage = explosive_radius_damage × max(0.1, 1 - distance/explosion_radius)
+
+-- Armor check
+if projectile_armor_pen > part_armor then
+    -- Apply damage
+else
+    -- Blocked by armor
+end
+```
+
+### Explosion Triggers:
+
+**High Explosive:**
+- Penetration: 0.1 second delay
+- Blocked: Immediate explosion
+
+**Airburst:**
+- Timer: After `airburst_time` seconds
+- Contact: On any collision
+- Proximity: Within 10 studs of any part
+
+**High Penetration Explosive:**
+- Penetration: After `afterpen` delay
+- Blocked: Immediate explosion
+
+### Console Debug Output:
+- `"SERVER: Explosion sphere created with ID: [id] - will destroy in 3 seconds"`
+- `"SERVER: [AmmoType] already exploded, ignoring hit"` (prevention system)
+- `"SERVER: Global cleanup destroying orphaned sphere: [id]"` (backup cleanup)
+- `"SERVER: Explosion damaged [part] for [damage] damage (distance: [X] armor: [Y])"`
