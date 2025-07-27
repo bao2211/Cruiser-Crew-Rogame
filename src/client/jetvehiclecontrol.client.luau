@@ -949,3 +949,501 @@ RunService.RenderStepped:Connect(function()
 end)
 
 print("Hello world, from client!")
+
+-- ========================================
+-- CHAMBER INSPECTOR FUNCTIONALITY
+-- ========================================
+
+-- Chamber inspection variables
+local inspectionMode = false
+local activeGUIs = {}
+local lastInspectionUpdate = 0
+local INSPECTION_RANGE = 10 -- studs
+local INSPECTION_UPDATE_INTERVAL = 0.2 -- seconds
+local GUI_OFFSET = Vector3.new(0, 3, 0) -- offset above chamber
+
+-- Create floating GUI for chamber
+local function createChamberGUI(chamber)
+	-- Remove existing GUI if present
+	if activeGUIs[chamber] then
+		activeGUIs[chamber]:Destroy()
+		activeGUIs[chamber] = nil
+	end
+	
+	-- Create BillboardGui
+	local billboardGui = Instance.new("BillboardGui")
+	billboardGui.Name = "ChamberInspectorGUI"
+	billboardGui.Adornee = chamber
+	billboardGui.Size = UDim2.new(0, 300, 0, 200)
+	billboardGui.StudsOffset = GUI_OFFSET
+	billboardGui.LightInfluence = 0
+	billboardGui.Parent = chamber
+	
+	-- Create main frame
+	local mainFrame = Instance.new("Frame")
+	mainFrame.Name = "MainFrame"
+	mainFrame.Size = UDim2.new(1, 0, 1, 0)
+	mainFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+	mainFrame.BackgroundTransparency = 0.3
+	mainFrame.BorderSizePixel = 2
+	mainFrame.BorderColor3 = Color3.new(1, 1, 0) -- Yellow border
+	mainFrame.Parent = billboardGui
+	
+	-- Add corner rounding
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = mainFrame
+	
+	-- Create title
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Name = "Title"
+	titleLabel.Size = UDim2.new(1, 0, 0, 25)
+	titleLabel.Position = UDim2.new(0, 0, 0, 0)
+	titleLabel.BackgroundColor3 = Color3.new(1, 1, 0)
+	titleLabel.BackgroundTransparency = 0
+	titleLabel.Text = "CHAMBER: " .. chamber.Name
+	titleLabel.TextColor3 = Color3.new(0, 0, 0)
+	titleLabel.TextScaled = true
+	titleLabel.Font = Enum.Font.SourceSansBold
+	titleLabel.Parent = mainFrame
+	
+	-- Add corner to title
+	local titleCorner = Instance.new("UICorner")
+	titleCorner.CornerRadius = UDim.new(0, 8)
+	titleCorner.Parent = titleLabel
+	
+	-- Create scrolling frame for attributes
+	local scrollFrame = Instance.new("ScrollingFrame")
+	scrollFrame.Name = "AttributesList"
+	scrollFrame.Size = UDim2.new(1, -15, 1, -35)  -- More space for scrollbar
+	scrollFrame.Position = UDim2.new(0, 5, 0, 30)
+	scrollFrame.BackgroundTransparency = 1
+	scrollFrame.BorderSizePixel = 0
+	scrollFrame.ScrollBarThickness = 10  -- Thicker for better interaction
+	scrollFrame.ScrollBarImageColor3 = Color3.new(1, 1, 0)
+	scrollFrame.ScrollBarImageTransparency = 0  -- Fully visible
+	scrollFrame.ScrollingEnabled = true
+	scrollFrame.ScrollingDirection = Enum.ScrollingDirection.Y
+	scrollFrame.ElasticBehavior = Enum.ElasticBehavior.WhenScrollable
+	scrollFrame.VerticalScrollBarInset = Enum.ScrollBarInset.None
+	scrollFrame.VerticalScrollBarPosition = Enum.VerticalScrollBarPosition.Right
+	scrollFrame.CanvasSize = UDim2.fromOffset(0, 500)  -- Start with large canvas
+	scrollFrame.Parent = mainFrame
+	
+	-- Create list layout
+	local listLayout = Instance.new("UIListLayout")
+	listLayout.SortOrder = Enum.SortOrder.Name
+	listLayout.Padding = UDim.new(0, 3)  -- Slightly more padding
+	listLayout.Parent = scrollFrame
+	
+	-- Get all chamber attributes
+	local attributes = chamber:GetAttributes()
+	
+	-- Define attribute order and descriptions
+	local attributeInfo = {
+		ammotype = {order = 1, desc = "Projectile behavior type"},
+		armor_pen = {order = 2, desc = "Armor penetration value"},
+		damage = {order = 3, desc = "Direct damage dealt"},
+		afterpen = {order = 4, desc = "HE explosion delay (seconds)"},
+		airburst_time = {order = 5, desc = "Airburst timer (seconds)"},
+		detect_range = {order = 6, desc = "Proximity detection (studs)"},
+		explosion_radius = {order = 7, desc = "Blast radius (studs)"},
+		explosive_radius_damage = {order = 8, desc = "Explosion damage"},
+		weapontype = {order = 9, desc = "Weapon capability"}
+	}
+	
+	-- Sort attributes by defined order
+	local sortedAttributes = {}
+	for name, value in pairs(attributes) do
+		table.insert(sortedAttributes, {name = name, value = value, info = attributeInfo[name]})
+	end
+	
+	table.sort(sortedAttributes, function(a, b)
+		local orderA = a.info and a.info.order or 999
+		local orderB = b.info and b.info.order or 999
+		if orderA == orderB then
+			return a.name < b.name
+		end
+		return orderA < orderB
+	end)
+	
+	-- Create attribute labels
+	for _, attr in ipairs(sortedAttributes) do
+		local attrFrame = Instance.new("Frame")
+		attrFrame.Name = attr.name
+		attrFrame.Size = UDim2.new(1, -15, 0, 25)  -- Taller rows, account for scrollbar
+		attrFrame.BackgroundTransparency = 1
+		attrFrame.Parent = scrollFrame
+		
+		-- Attribute name
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.Name = "Name"
+		nameLabel.Size = UDim2.new(0.4, 0, 1, 0)
+		nameLabel.Position = UDim2.new(0, 0, 0, 0)
+		nameLabel.BackgroundTransparency = 1
+		nameLabel.Text = attr.name .. ":"
+		nameLabel.TextColor3 = Color3.new(1, 1, 0)
+		nameLabel.TextScaled = true
+		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+		nameLabel.Font = Enum.Font.SourceSans
+		nameLabel.Parent = attrFrame
+		
+		-- Attribute value
+		local valueLabel = Instance.new("TextLabel")
+		valueLabel.Name = "Value"
+		valueLabel.Size = UDim2.new(0.55, -10, 1, 0)  -- Leave space for scrollbar
+		valueLabel.Position = UDim2.new(0.4, 0, 0, 0)
+		valueLabel.BackgroundTransparency = 1
+		valueLabel.Text = tostring(attr.value)
+		valueLabel.TextColor3 = Color3.new(1, 1, 1)
+		valueLabel.TextScaled = true
+		valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+		valueLabel.Font = Enum.Font.SourceSans
+		valueLabel.Parent = attrFrame
+	end
+	
+	-- Update canvas size after all elements are created
+	local function updateCanvasSize()
+		local contentSize = listLayout.AbsoluteContentSize
+		local frameSize = scrollFrame.AbsoluteSize
+		local canvasHeight = math.max(contentSize.Y + 10, frameSize.Y + 1)  -- Ensure scrollable
+		scrollFrame.CanvasSize = UDim2.fromOffset(0, canvasHeight)
+		
+		-- Debug output
+		print("CLIENT: ScrollFrame - Content:", contentSize.Y, "Frame:", frameSize.Y, "Canvas:", canvasHeight, "Scrollable:", canvasHeight > frameSize.Y)
+	end
+	
+	-- Connect to layout changes
+	listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvasSize)
+	scrollFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateCanvasSize)
+	
+	-- Delay update to ensure proper sizing
+	task.spawn(function()
+		task.wait(0.1)  -- Wait for layout to settle
+		updateCanvasSize()
+	end)
+	
+	-- Store GUI reference
+	activeGUIs[chamber] = billboardGui
+	
+	return billboardGui
+end
+
+-- Remove GUI for chamber
+local function removeChamberGUI(chamber)
+	if activeGUIs[chamber] then
+		activeGUIs[chamber]:Destroy()
+		activeGUIs[chamber] = nil
+	end
+end
+
+-- Find nearby chambers
+local function findNearbyChambers()
+	if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+		return {}
+	end
+	
+	local playerPosition = player.Character.HumanoidRootPart.Position
+	local nearbyChambers = {}
+	
+	-- Search for chamber parts
+	for _, obj in pairs(workspace:GetDescendants()) do
+		if obj:IsA("BasePart") and obj.Name:lower():find("chamber") then
+			local distance = (obj.Position - playerPosition).Magnitude
+			if distance <= INSPECTION_RANGE then
+				table.insert(nearbyChambers, obj)
+			end
+		end
+	end
+	
+	return nearbyChambers
+end
+
+-- Update chamber GUIs
+local function updateChamberInspection()
+	if not inspectionMode then
+		return
+	end
+	
+	local currentTime = tick()
+	if currentTime - lastInspectionUpdate < INSPECTION_UPDATE_INTERVAL then
+		return
+	end
+	lastInspectionUpdate = currentTime
+	
+	local nearbyChambers = findNearbyChambers()
+	local nearbySet = {}
+	
+	-- Create set of nearby chambers
+	for _, chamber in ipairs(nearbyChambers) do
+		nearbySet[chamber] = true
+	end
+	
+	-- Remove GUIs for chambers that are no longer nearby
+	for chamber, gui in pairs(activeGUIs) do
+		if not nearbySet[chamber] then
+			removeChamberGUI(chamber)
+		end
+	end
+	
+	-- Create GUIs for new nearby chambers
+	for _, chamber in ipairs(nearbyChambers) do
+		if not activeGUIs[chamber] then
+			createChamberGUI(chamber)
+		end
+	end
+end
+
+-- Toggle inspection mode
+local function toggleInspectionMode()
+	inspectionMode = not inspectionMode
+	
+	if inspectionMode then
+		print("CLIENT: Chamber inspection mode ENABLED - Press T to disable")
+	else
+		print("CLIENT: Chamber inspection mode DISABLED")
+		-- Clean up all GUIs
+		for chamber, gui in pairs(activeGUIs) do
+			removeChamberGUI(chamber)
+		end
+	end
+end
+
+print("CLIENT: Chamber Inspector loaded - Press T to toggle inspection mode")
+
+-- ===== HEALTH INSPECTOR SYSTEM =====
+
+-- Health inspector configuration
+local HEALTH_INSPECTION_RANGE = 8  -- studs detection range
+local HEALTH_UPDATE_INTERVAL = 0.3  -- seconds between updates
+local HEALTH_GUI_OFFSET = Vector3.new(0, 2, 0)  -- height above part
+
+-- Health inspector state
+local healthInspectionMode = false
+local activeHealthGUIs = {}  -- part -> GUI mapping
+local lastHealthUpdate = 0
+
+-- Create health GUI for part
+local function createHealthGUI(part)
+	if activeHealthGUIs[part] then
+		return activeHealthGUIs[part]
+	end
+	
+	-- Get part health
+	local health = part:GetAttribute("health")
+	local maxHealth = part:GetAttribute("max_health") or health
+	if not health then
+		return nil  -- Part has no health attribute
+	end
+	
+	-- Create billboard GUI
+	local billboardGui = Instance.new("BillboardGui")
+	billboardGui.Name = "HealthInspector_" .. part.Name
+	billboardGui.Size = UDim2.fromOffset(200, 60)
+	billboardGui.StudsOffset = HEALTH_GUI_OFFSET
+	billboardGui.Adornee = part
+	billboardGui.Parent = workspace
+	
+	-- Create main frame
+	local mainFrame = Instance.new("Frame")
+	mainFrame.Name = "MainFrame"
+	mainFrame.Size = UDim2.fromScale(1, 1)
+	mainFrame.Position = UDim2.fromScale(0, 0)
+	mainFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+	mainFrame.BackgroundTransparency = 0.3
+	mainFrame.BorderSizePixel = 2
+	mainFrame.BorderColor3 = Color3.new(0, 1, 0)  -- Green border
+	mainFrame.Parent = billboardGui
+	
+	-- Add corner rounding
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 6)
+	corner.Parent = mainFrame
+	
+	-- Create title
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Name = "Title"
+	titleLabel.Size = UDim2.new(1, 0, 0, 20)
+	titleLabel.Position = UDim2.new(0, 0, 0, 0)
+	titleLabel.BackgroundColor3 = Color3.new(0, 1, 0)  -- Green background
+	titleLabel.BackgroundTransparency = 0
+	titleLabel.Text = "HEALTH: " .. part.Name
+	titleLabel.TextColor3 = Color3.new(0, 0, 0)
+	titleLabel.TextScaled = true
+	titleLabel.Font = Enum.Font.SourceSansBold
+	titleLabel.Parent = mainFrame
+	
+	-- Add corner to title
+	local titleCorner = Instance.new("UICorner")
+	titleCorner.CornerRadius = UDim.new(0, 6)
+	titleCorner.Parent = titleLabel
+	
+	-- Create health bar background
+	local healthBarBg = Instance.new("Frame")
+	healthBarBg.Name = "HealthBarBackground"
+	healthBarBg.Size = UDim2.new(1, -10, 0, 12)
+	healthBarBg.Position = UDim2.fromOffset(5, 25)
+	healthBarBg.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+	healthBarBg.BorderSizePixel = 1
+	healthBarBg.BorderColor3 = Color3.new(0.5, 0.5, 0.5)
+	healthBarBg.Parent = mainFrame
+	
+	-- Create health bar fill
+	local healthBar = Instance.new("Frame")
+	healthBar.Name = "HealthBar"
+	healthBar.Size = UDim2.fromScale(health / maxHealth, 1)
+	healthBar.Position = UDim2.new(0, 0, 0, 0)
+	healthBar.BorderSizePixel = 0
+	healthBar.Parent = healthBarBg
+	
+	-- Set health bar color based on percentage
+	local healthPercent = health / maxHealth
+	if healthPercent > 0.6 then
+		healthBar.BackgroundColor3 = Color3.new(0, 1, 0)  -- Green
+	elseif healthPercent > 0.3 then
+		healthBar.BackgroundColor3 = Color3.new(1, 1, 0)  -- Yellow
+	else
+		healthBar.BackgroundColor3 = Color3.new(1, 0, 0)  -- Red
+	end
+	
+	-- Create health text
+	local healthText = Instance.new("TextLabel")
+	healthText.Name = "HealthText"
+	healthText.Size = UDim2.new(1, 0, 0, 15)
+	healthText.Position = UDim2.fromOffset(0, 42)
+	healthText.BackgroundTransparency = 1
+	healthText.Text = string.format("%.0f / %.0f HP (%.1f%%)", health, maxHealth, healthPercent * 100)
+	healthText.TextColor3 = Color3.new(1, 1, 1)
+	healthText.TextScaled = true
+	healthText.Font = Enum.Font.SourceSans
+	healthText.Parent = mainFrame
+	
+	-- Store GUI reference
+	activeHealthGUIs[part] = billboardGui
+	
+	return billboardGui
+end
+
+-- Remove health GUI for part
+local function removeHealthGUI(part)
+	if activeHealthGUIs[part] then
+		activeHealthGUIs[part]:Destroy()
+		activeHealthGUIs[part] = nil
+	end
+end
+
+-- Find nearby parts with health
+local function findNearbyHealthParts()
+	if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+		return {}
+	end
+	
+	local playerPosition = player.Character.HumanoidRootPart.Position
+	local nearbyParts = {}
+	
+	-- Search for parts with health attribute
+	for _, obj in pairs(workspace:GetDescendants()) do
+		if obj:IsA("BasePart") and obj:GetAttribute("health") then
+			-- Skip player's character parts
+			if obj:IsDescendantOf(player.Character) then
+				continue
+			end
+			
+			local distance = (obj.Position - playerPosition).Magnitude
+			if distance <= HEALTH_INSPECTION_RANGE then
+				table.insert(nearbyParts, obj)
+			end
+		end
+	end
+	
+	return nearbyParts
+end
+
+-- Update health inspection
+local function updateHealthInspection()
+	if not healthInspectionMode then
+		return
+	end
+	
+	local currentTime = tick()
+	if currentTime - lastHealthUpdate < HEALTH_UPDATE_INTERVAL then
+		return
+	end
+	lastHealthUpdate = currentTime
+	
+	local nearbyParts = findNearbyHealthParts()
+	local currentParts = {}
+	
+	-- Create GUIs for nearby parts
+	for _, part in ipairs(nearbyParts) do
+		currentParts[part] = true
+		if not activeHealthGUIs[part] then
+			createHealthGUI(part)
+		else
+			-- Update existing GUI with current health
+			local gui = activeHealthGUIs[part]
+			local health = part:GetAttribute("health")
+			local maxHealth = part:GetAttribute("max_health") or health
+			
+			if health and gui then
+				local healthPercent = health / maxHealth
+				local healthBar = gui.MainFrame.HealthBarBackground.HealthBar
+				local healthText = gui.MainFrame.HealthText
+				
+				-- Update bar size and color
+				healthBar.Size = UDim2.fromScale(healthPercent, 1)
+				if healthPercent > 0.6 then
+					healthBar.BackgroundColor3 = Color3.new(0, 1, 0)  -- Green
+				elseif healthPercent > 0.3 then
+					healthBar.BackgroundColor3 = Color3.new(1, 1, 0)  -- Yellow
+				else
+					healthBar.BackgroundColor3 = Color3.new(1, 0, 0)  -- Red
+				end
+				
+				-- Update text
+				healthText.Text = string.format("%.0f / %.0f HP (%.1f%%)", health, maxHealth, healthPercent * 100)
+			end
+		end
+	end
+	
+	-- Remove GUIs for parts no longer nearby
+	for part, gui in pairs(activeHealthGUIs) do
+		if not currentParts[part] then
+			removeHealthGUI(part)
+		end
+	end
+end
+
+-- Toggle health inspection mode
+local function toggleHealthInspectionMode()
+	healthInspectionMode = not healthInspectionMode
+	
+	if healthInspectionMode then
+		print("CLIENT: Health inspection mode ENABLED - Press H to disable")
+	else
+		print("CLIENT: Health inspection mode DISABLED")
+		-- Clean up all health GUIs
+		for part, gui in pairs(activeHealthGUIs) do
+			removeHealthGUI(part)
+		end
+	end
+end
+
+print("CLIENT: Health Inspector loaded - Press H to toggle health inspection mode")
+
+-- Add T and H key handling for inspection toggles
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	
+	if input.KeyCode == Enum.KeyCode.T then
+		toggleInspectionMode()
+	elseif input.KeyCode == Enum.KeyCode.H then
+		toggleHealthInspectionMode()
+	end
+end)
+
+-- Add inspection updates to main loop
+RunService.Heartbeat:Connect(function()
+	updateChamberInspection()
+	updateHealthInspection()
+end)
