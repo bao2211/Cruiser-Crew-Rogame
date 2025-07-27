@@ -33,6 +33,15 @@ if not fireWeaponEvent then
 	print("SERVER: Created FireWeapon RemoteEvent")
 end
 
+-- Create WeaponFireConfirm RemoteEvent if it doesn't exist
+local weaponFireConfirmEvent = remoteEvents:FindFirstChild("WeaponFireConfirm")
+if not weaponFireConfirmEvent then
+	weaponFireConfirmEvent = Instance.new("RemoteEvent")
+	weaponFireConfirmEvent.Name = "WeaponFireConfirm"
+	weaponFireConfirmEvent.Parent = remoteEvents
+	print("SERVER: Created WeaponFireConfirm RemoteEvent")
+end
+
 print("SERVER: All RemoteEvents created successfully")
 print("SERVER: Server systems will load automatically:")
 print("  - WeaponSystem.server.luau")

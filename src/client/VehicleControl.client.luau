@@ -15,6 +15,7 @@ local camera = workspace.CurrentCamera
 local remoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 local hoverToggleEvent = remoteEvents:WaitForChild("HoverToggle")
 local fireWeaponEvent = remoteEvents:WaitForChild("FireWeapon")
+local weaponFireConfirmEvent = remoteEvents:WaitForChild("WeaponFireConfirm")
 
 -- Default values
 local DEFAULT_FORCE_MAGNITUDE = 3000
@@ -220,23 +221,7 @@ local function fireCannon(vehicleSeat)
 	-- Send fire request to server
 	fireWeaponEvent:FireServer(vehicleSeat)
 	
-	-- Delayed client feedback - play sound after brief validation delay
-	task.wait(0.05) -- Small delay to allow exit detection
-	
-	-- Re-validate before playing sound (exit might have happened)
-	if not isInVehicle or seat ~= vehicleSeat then
-		print("CLIENT: Cancelled sound - player exited during fire request")
-		return
-	end
-	
-	local fireSound = Instance.new("Sound")
-	fireSound.SoundId = "rbxasset://sounds/impact_water.mp3"
-	fireSound.Volume = 0.5
-	fireSound.Parent = chamber
-	fireSound:Play()
-	
-	-- Auto-cleanup sound
-	game:GetService("Debris"):AddItem(fireSound, 3)
+	-- Sound will be played only when server confirms the shot was fired
 	
 	print("CLIENT: Fire request sent for", ammoType, "round from", chamber.Name)
 end
@@ -795,5 +780,24 @@ monitorVehicleSeats()
 createControlGUI()
 connectButtonHandlers()
 updateGUIVisibility()
+
+-- Handle weapon fire confirmation from server
+weaponFireConfirmEvent.OnClientEvent:Connect(function(vehicleSeat, chamber, ammoType)
+	-- Only play sound if we're still in the vehicle and it matches our current seat
+	if isInVehicle and seat == vehicleSeat and chamber then
+		local fireSound = Instance.new("Sound")
+		fireSound.SoundId = "rbxasset://sounds/impact_water.mp3"
+		fireSound.Volume = 0.5
+		fireSound.Parent = chamber
+		fireSound:Play()
+		
+		-- Auto-cleanup sound
+		game:GetService("Debris"):AddItem(fireSound, 3)
+		
+		print("CLIENT: Played firing sound for", ammoType, "round from", chamber.Name)
+	else
+		print("CLIENT: Skipped firing sound - not in matching vehicle")
+	end
+end)
 
 print("CLIENT: Vehicle Control System loaded")

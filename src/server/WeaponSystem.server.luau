@@ -7,12 +7,16 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 -- Wait for RemoteEvents (created by main server)
 local remoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 local fireWeaponEvent = remoteEvents:WaitForChild("FireWeapon")
+local weaponFireConfirmEvent = remoteEvents:WaitForChild("WeaponFireConfirm")
 
 print("SERVER: Weapon System loaded")
 
 -- Explosion cooldown system to prevent infinite explosions
 local explosionCooldowns = {}
 local EXPLOSION_COOLDOWN_TIME = 0.5
+
+-- Reload cooldown system for player weapons
+local reloadCooldowns = {}
 
 -- Create sound effect
 local function createSound(parent, soundId, volume, pitch)
@@ -76,7 +80,7 @@ local function createExplosion(position, explosionRadius, explosionDamage, armor
 	-- Find all parts within explosion radius and apply damage
 	for _, obj in pairs(workspace:GetPartBoundsInBox(CFrame.new(position), Vector3.new(explosionRadius * 2, explosionRadius * 2, explosionRadius * 2))) do
 		if obj:IsA("BasePart") and obj ~= explosionSphere then
-			if not (obj.Name == "ExplosionRadius" or obj.Name:find("Projectile") or obj.Name:find("Explosion") or obj.Name == "Airange") then
+			if not (obj.Name == "ExplosionRadius" or obj.Name:find("Projectile") or obj.Name:find("Explosion") or obj.Name == "AIrange") then
 				local distance = (obj.Position - position).Magnitude
 				if distance <= explosionRadius then
 					local partArmor = tonumber(obj:GetAttribute("armor")) or 0
@@ -179,6 +183,20 @@ local function fireCannon(player, vehicleSeat, chamber)
 	
 	print("SERVER: Received fire weapon request from", player.Name)
 	
+	-- Check reload cooldown
+	local chamberKey = tostring(chamber)
+	local currentTime = tick()
+	local reloadTime = tonumber(chamber:GetAttribute("reload")) or 1.0
+	
+	if reloadCooldowns[chamberKey] and (currentTime - reloadCooldowns[chamberKey]) < reloadTime then
+		local remainingTime = reloadTime - (currentTime - reloadCooldowns[chamberKey])
+		print("SERVER: Weapon still reloading, wait", math.ceil(remainingTime * 10) / 10, "seconds")
+		return
+	end
+	
+	-- Set reload cooldown
+	reloadCooldowns[chamberKey] = currentTime
+	
 	-- Get chamber attributes
 	local ammoType = chamber:GetAttribute("ammotype") or "standard"
 	local armorPen = tonumber(chamber:GetAttribute("armor_pen")) or 10
@@ -194,6 +212,9 @@ local function fireCannon(player, vehicleSeat, chamber)
 	local firePosition = chamber.Position
 	
 	print("SERVER: Cannon fired by", player.Name, "from", chamber.Name, "in direction", fireDirection)
+	
+	-- Confirm weapon firing to client for sound effects
+	weaponFireConfirmEvent:FireClient(player, vehicleSeat, chamber, ammoType)
 	
 	-- Create projectile
 	local projectile = Instance.new("Part")
@@ -294,7 +315,7 @@ local function fireCannon(player, vehicleSeat, chamber)
 		end
 		
 		-- Ignore AI turret range detection parts
-		if hit.Name == "Airange" then
+		if hit.Name == "AIrange" then
 			return
 		end
 		

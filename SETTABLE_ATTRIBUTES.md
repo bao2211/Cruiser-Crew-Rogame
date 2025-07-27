@@ -48,7 +48,7 @@ This document lists all user-configurable attributes that can be set on various 
 | `armor_pen` | number | 10 | Any positive number | Armor penetration value |
 | `explosion_radius` | number | 20 | Any positive number | Radius (studs) of explosion area effect |
 | `explosive_radius_damage` | number | 50 | Any positive number | Base damage dealt to parts within explosion radius |
-| `reload` | number | 1.0 | Any positive number | Reload time (seconds) between shots for AI turrets |
+| `reload` | number | 1.0 | Any positive number | Reload time (seconds) between shots for all weapons |
 
 **Ammo Type Behaviors:**
 - **"standard"**: Dark grey projectiles, deal direct damage on penetration, no explosion

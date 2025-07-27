@@ -26,6 +26,11 @@ local REMOTE_EVENTS = {
 		description = "Fire weapon from vehicle seat"
 	},
 	
+	WeaponFireConfirm = {
+		name = "WeaponFireConfirm",
+		description = "Server confirms weapon firing to client for sound effects"
+	},
+	
 	-- Health system
 	HealthUpdate = {
 		name = "HealthUpdate",

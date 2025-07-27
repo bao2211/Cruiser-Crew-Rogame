@@ -1,6 +1,6 @@
 -- AI Turret System Server
 -- Handles automatic target detection and firing for AI turrets
--- Requires VehicleSeat with aiturret=true and Airange part in parent model
+-- Requires VehicleSeat with aiturret=true and AIrange part in parent model
 
 local RunService = game:GetService("RunService")
 local Debris = game:GetService("Debris")
@@ -185,12 +185,12 @@ local function findChamber(vehicleSeat)
 	return nil
 end
 
--- Find Airange part for a vehicle seat
+-- Find AIrange part for a vehicle seat
 local function findAirange(vehicleSeat)
 	local parentModel = vehicleSeat.Parent
 	if parentModel then
 		for _, obj in pairs(parentModel:GetChildren()) do
-			if obj:IsA("Part") and obj.Name == "Airange" then
+			if obj:IsA("Part") and obj.Name == "AIrange" then
 				return obj
 			end
 		end
@@ -241,17 +241,17 @@ local function isValidTarget(part, turretVehicle)
 	return true
 end
 
--- Find targets within Airange
+-- Find targets within AIrange
 local function findTargetsInRange(airange, turretVehicle)
 	local targets = {}
 	local airangePosition = airange.Position
 	local airangeSize = airange.Size
 	
-	-- Check all parts in workspace for distance within Airange bounds
+	-- Check all parts in workspace for distance within AIrange bounds
 	for _, obj in pairs(workspace:GetDescendants()) do
 		if isValidTarget(obj, turretVehicle) then
 			local distance = (obj.Position - airangePosition).Magnitude
-			-- Check if target is within the Airange bounds
+			-- Check if target is within the AIrange bounds
 			local relativePos = obj.Position - airangePosition
 			if math.abs(relativePos.X) <= airangeSize.X/2 and
 			   math.abs(relativePos.Y) <= airangeSize.Y/2 and
@@ -534,10 +534,10 @@ local function scanForAITurrets()
 					chamber = chamber
 				}
 				
-				print("SERVER: Registered AI Turret:", obj.Name, "with Airange:", airange.Name, "and Chamber:", chamber.Name)
+				print("SERVER: Registered AI Turret:", obj.Name, "with AIrange:", airange.Name, "and Chamber:", chamber.Name)
 			else
 				if not airange then
-					print("SERVER: AI Turret", obj.Name, "missing Airange part in parent model")
+					print("SERVER: AI Turret", obj.Name, "missing AIrange part in parent model")
 				end
 				if not chamber then
 					print("SERVER: AI Turret", obj.Name, "missing chamber part in parent model")
