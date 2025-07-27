@@ -303,6 +303,7 @@ local function fireCannon(player, vehicleSeat, chamber)
 	local damage = tonumber(chamber:GetAttribute("damage")) or 25
 	local afterPen = tonumber(chamber:GetAttribute("afterpen")) or 0.5
 	local airburstTime = tonumber(chamber:GetAttribute("airburst_time")) or 2.0
+	local detectRange = tonumber(chamber:GetAttribute("detect_range")) or 15
 	local explosionRadius = tonumber(chamber:GetAttribute("explosion_radius")) or 20
 	local explosionDamage = tonumber(chamber:GetAttribute("explosive_radius_damage")) or 50
 	
@@ -340,6 +341,7 @@ local function fireCannon(player, vehicleSeat, chamber)
 	projectile:SetAttribute("damage", damage)
 	projectile:SetAttribute("afterpen", afterPen)
 	projectile:SetAttribute("airburst_time", airburstTime)
+	projectile:SetAttribute("detect_range", detectRange)
 	projectile:SetAttribute("has_exploded", false) -- Flag to prevent multiple explosions
 	
 	-- Add velocity
@@ -370,23 +372,25 @@ local function fireCannon(player, vehicleSeat, chamber)
 			while projectile and projectile.Parent do
 				wait(0.1) -- Check every 0.1 seconds
 				
-				-- Check for parts within 10 studs
+				local projectileDetectRange = tonumber(projectile:GetAttribute("detect_range")) or 15
+				-- Check for parts within detect_range studs
 				local nearbyParts = {}
-				for _, obj in pairs(workspace:GetPartBoundsInBox(projectile.CFrame, Vector3.new(20, 20, 20))) do
+				local searchSize = Vector3.new(projectileDetectRange * 2, projectileDetectRange * 2, projectileDetectRange * 2)
+				for _, obj in pairs(workspace:GetPartBoundsInBox(projectile.CFrame, searchSize)) do
 					if obj ~= projectile and not obj:IsDescendantOf(vehicleSeat.Parent) then
 						local distance = (obj.Position - projectile.Position).Magnitude
-						if distance <= 10 then
+						if distance <= projectileDetectRange then
 							table.insert(nearbyParts, obj)
 						end
 					end
 				end
 				
-				-- If parts found within 10 studs, explode (if not already exploded)
+				-- If parts found within detect_range studs, explode (if not already exploded)
 				if #nearbyParts > 0 then
 					local hasExploded = projectile:GetAttribute("has_exploded")
 					if not hasExploded then
 						projectile:SetAttribute("has_exploded", true)
-						print("SERVER: Airburst proximity detonation! Found", #nearbyParts, "nearby parts")
+						print("SERVER: Airburst proximity detonation! Found", #nearbyParts, "nearby parts within", projectileDetectRange, "studs")
 						createExplosion(projectile.Position, explosionRadius, explosionDamage, armorPen)
 						projectile:Destroy()
 						break

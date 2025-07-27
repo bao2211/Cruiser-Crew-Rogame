@@ -43,6 +43,7 @@ This document lists all user-configurable attributes that can be set on various 
 | `ammotype` | string | "standard" | "standard", "high_explosive", "airburst" | Projectile behavior type |
 | `afterpen` | number | 0.5 | Any positive number | Delay (seconds) before HE explosion after armor penetration |
 | `airburst_time` | number | 2.0 | Any positive number | Time (seconds) before airburst explosion |
+| `detect_range` | number | 15 | Any positive number | Proximity detection range (studs) for airburst rounds |
 | `armor_pen` | number | 10 | Any positive number | Armor penetration value |
 | `explosion_radius` | number | 20 | Any positive number | Radius (studs) of explosion area effect |
 | `explosive_radius_damage` | number | 50 | Any positive number | Base damage dealt to parts within explosion radius |
@@ -50,7 +51,7 @@ This document lists all user-configurable attributes that can be set on various 
 **Ammo Type Behaviors:**
 - **"standard"**: Dark grey projectiles, deal direct damage on penetration, no explosion
 - **"high_explosive"**: Red projectiles, no direct damage, explode after afterpen delay when penetrating or immediately when blocked
-- **"airburst"**: Yellow projectiles, no direct damage, explode after airburst_time OR on contact
+- **"airburst"**: Yellow projectiles, no direct damage, explode after airburst_time OR on contact OR when within detect_range of any part
 
 **Damage System:**
 - **Standard Rounds**: Deal direct damage to hit parts, pass through until blocked by armor
