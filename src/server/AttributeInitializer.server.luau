@@ -56,6 +56,31 @@ local function initializeChambers()
 			if not obj:GetAttribute("weapontype") then
 				obj:SetAttribute("weapontype", "Cannon") -- Default weapon type
 			end
+			
+			-- Initialize projectile speed if not set
+			if not obj:GetAttribute("projectile_speed") then
+				obj:SetAttribute("projectile_speed", 100) -- Default projectile speed
+			end
+			
+			-- Initialize projectile health if not set
+			if not obj:GetAttribute("projectile_health") then
+				obj:SetAttribute("projectile_health", 50) -- Default projectile health
+			end
+			
+			-- Initialize bullet count if not set
+			if not obj:GetAttribute("bullet_count") then
+				obj:SetAttribute("bullet_count", 10) -- Default magazine size
+			end
+			
+			-- Initialize max bullet count if not set
+			if not obj:GetAttribute("max_bullet_count") then
+				obj:SetAttribute("max_bullet_count", 10) -- Default max magazine size
+			end
+			
+			-- Initialize fire rate if not set
+			if not obj:GetAttribute("firerate") then
+				obj:SetAttribute("firerate", 1.0) -- Default fire rate (shots per second)
+			end
 		end
 	end
 end

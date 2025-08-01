@@ -16,6 +16,7 @@ local remoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 local hoverToggleEvent = remoteEvents:WaitForChild("HoverToggle")
 local fireWeaponEvent = remoteEvents:WaitForChild("FireWeapon")
 local weaponFireConfirmEvent = remoteEvents:WaitForChild("WeaponFireConfirm")
+local reloadWeaponEvent = remoteEvents:WaitForChild("ReloadWeapon")
 
 -- Default values
 local DEFAULT_FORCE_MAGNITUDE = 3000
@@ -55,6 +56,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 local screenGui = nil
 local hoverButton = nil
 local lockButton = nil
+local ammoLabel = nil
 
 -- Function to create control GUI
 local function createControlGUI()
@@ -97,6 +99,64 @@ local function createControlGUI()
 		lockButton.Visible = false -- Initially hidden until hover is enabled
 		lockButton.Parent = screenGui
 	end
+	
+	-- Create ammo counter label
+	if not ammoLabel then
+		ammoLabel = Instance.new("TextLabel")
+		ammoLabel.Name = "AmmoLabel"
+		ammoLabel.Size = UDim2.fromOffset(120, 30)
+		ammoLabel.Position = UDim2.fromOffset(10, 60)
+		ammoLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+		ammoLabel.BorderColor3 = Color3.fromRGB(255, 255, 255)
+		ammoLabel.BorderSizePixel = 1
+		ammoLabel.Text = "Ammo: --/--"
+		ammoLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		ammoLabel.TextSize = 12
+		ammoLabel.Font = Enum.Font.SourceSansBold
+		ammoLabel.TextXAlignment = Enum.TextXAlignment.Center
+		ammoLabel.Visible = false -- Initially hidden
+		ammoLabel.Parent = screenGui
+	end
+end
+
+-- Function to update ammo display
+local function updateAmmoDisplay()
+	if not ammoLabel or not seat then
+		return
+	end
+	
+	-- Check if this seat has a weapon
+	local weaponType = seat:GetAttribute("weapontype") or "None"
+	if weaponType == "None" then
+		ammoLabel.Visible = false
+		return
+	end
+	
+	-- Find chamber part in the vehicle
+	local chamber = seat.Parent and seat.Parent:FindFirstChild("chamber")
+	if not chamber then
+		ammoLabel.Visible = false
+		return
+	end
+	
+	-- Get ammo attributes
+	local currentAmmo = chamber:GetAttribute("bullet_count") or 0
+	local maxAmmo = chamber:GetAttribute("max_bullet_count") or 0
+	local isReloading = chamber:GetAttribute("is_reloading") or false
+	
+	-- Update display
+	if isReloading then
+		ammoLabel.Text = "Reloading..."
+		ammoLabel.TextColor3 = Color3.fromRGB(255, 255, 0) -- Yellow during reload
+	elseif currentAmmo == 0 then
+		ammoLabel.Text = string.format("Ammo: %d/%d", currentAmmo, maxAmmo)
+		ammoLabel.TextColor3 = Color3.fromRGB(255, 0, 0) -- Red when empty
+	else
+		ammoLabel.Text = string.format("Ammo: %d/%d", currentAmmo, maxAmmo)
+		ammoLabel.TextColor3 = Color3.fromRGB(255, 255, 255) -- White normally
+	end
+	
+	ammoLabel.Visible = true
 end
 
 -- Function to update button appearance
@@ -146,6 +206,9 @@ local function updateButtonState()
 		lockButton.Visible = false
 		print("CLIENT: Lock button hidden - hover disabled")
 	end
+	
+	-- Update ammo display
+	updateAmmoDisplay()
 end
 
 -- Function to show/hide GUI based on vehicle state
@@ -154,20 +217,41 @@ local function updateGUIVisibility()
 		-- Hide UI if not in vehicle
 		if not isInVehicle or not seat then
 			screenGui.Enabled = false
+			if ammoLabel then
+				ammoLabel.Visible = false
+			end
 			return
 		end
 		
-		-- Hide UI if vehicle seat has a weapon type (not "None")
 		local weaponType = seat:GetAttribute("weapontype") or "None"
-		if weaponType ~= "None" then
-			screenGui.Enabled = false
-			print("CLIENT: Hiding vehicle control UI - seat has weapon type:", weaponType)
-			return
-		end
 		
-		-- Show UI for non-weapon seats
-		screenGui.Enabled = true
-		print("CLIENT: Showing vehicle control UI - no weapon type")
+		-- For weapon seats: hide hover/lock buttons but show ammo counter
+		if weaponType ~= "None" then
+			-- Hide hover and lock buttons for weapon seats
+			if hoverButton then
+				hoverButton.Visible = false
+			end
+			if lockButton then
+				lockButton.Visible = false
+			end
+			-- Keep screenGui enabled but update ammo display
+			screenGui.Enabled = true
+			updateAmmoDisplay()
+			print("CLIENT: Showing weapon UI - seat has weapon type:", weaponType)
+		else
+			-- For non-weapon seats: show hover/lock buttons, hide ammo counter
+			if hoverButton then
+				hoverButton.Visible = true
+			end
+			if lockButton then
+				lockButton.Visible = true
+			end
+			if ammoLabel then
+				ammoLabel.Visible = false
+			end
+			screenGui.Enabled = true
+			print("CLIENT: Showing vehicle control UI - no weapon type")
+		end
 	end
 end
 
@@ -522,7 +606,6 @@ local function handleSeatOccupancy(vehicleSeat)
 			-- Update state from server
 			updateVehicleState(vehicleSeat)
 			updateButtonState()
-			
 			-- Create connection for this seat to monitor attribute changes
 			if not seatConnections[vehicleSeat] then
 				print("CLIENT: Setting up attribute change listeners for", vehicleSeat.Name)
@@ -537,6 +620,22 @@ local function handleSeatOccupancy(vehicleSeat)
 						updateGUIVisibility()
 					end
 				end)
+			end
+			
+			-- Set up chamber attribute listeners for ammo display
+			local chamber = vehicleSeat.Parent and vehicleSeat.Parent:FindFirstChild("chamber")
+			if chamber then
+				local chamberConnection = chamber.AttributeChanged:Connect(function(attributeName)
+					if attributeName == "bullet_count" or attributeName == "max_bullet_count" or attributeName == "is_reloading" then
+						print("CLIENT: Chamber attribute changed:", attributeName)
+						updateAmmoDisplay()
+					end
+				end)
+				-- Store chamber connection with seat connection
+				local chamberKey = tostring(vehicleSeat) .. "_chamber"
+				if not seatConnections[chamberKey] then
+					seatConnections[chamberKey] = chamberConnection
+				end
 			end
 		end
 	else
@@ -564,6 +663,13 @@ local function handleSeatOccupancy(vehicleSeat)
 			if seatConnections[vehicleSeat] then
 				seatConnections[vehicleSeat]:Disconnect()
 				seatConnections[vehicleSeat] = nil
+			end
+			
+			-- Disconnect chamber-specific connections
+			local chamberKey = tostring(vehicleSeat) .. "_chamber"
+			if seatConnections[chamberKey] then
+				seatConnections[chamberKey]:Disconnect()
+				seatConnections[chamberKey] = nil
 			end
 		end
 	end
@@ -642,6 +748,12 @@ local function handleInput(input, gameProcessed)
 				print("CLIENT: G key pressed - sending command:", lockCommand)
 				hoverToggleEvent:FireServer(seat, lockCommand)
 				-- Button state will update automatically via attribute change listener
+			end
+		elseif keyCode == Enum.KeyCode.R then
+			-- Reload weapon
+			if seat then
+				print("CLIENT: R key pressed - reloading weapon")
+				reloadWeaponEvent:FireServer(seat)
 			end
 		elseif keyCode == Enum.KeyCode.V then
 			-- Debug output

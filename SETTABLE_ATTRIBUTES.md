@@ -34,6 +34,14 @@ This document lists all user-configurable attributes that can be set on various 
 | `weapontype` | string | "None" | "None", "Cannon" | Enables weapon firing capability |
 | `aiturret` | boolean | false | true, false | Enables AI automatic target detection and firing |
 
+### AI Turret Configuration Attributes
+| Attribute | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `ai_update_interval` | number | 0.05 | How often (seconds) the turret checks for targets (lower = more responsive) |
+| `tracking_speed` | number | 15 | How fast the turret rotates to track targets (higher = faster rotation) |
+| `target_cache_time` | number | 0.1 | How long (seconds) to cache target search results (0 = no caching, instant response) |
+| `max_target_distance` | number | 200 | Maximum distance (studs) to detect and engage targets |
+
 ---
 
 ## Chamber Part Attributes (Parts named "chamber")
@@ -41,19 +49,25 @@ This document lists all user-configurable attributes that can be set on various 
 ### Ammunition Configuration
 | Attribute | Type | Default | Options | Description |
 |-----------|------|---------|---------|-------------|
-| `ammotype` | string | "standard" | "standard", "high_explosive", "airburst" | Projectile behavior type |
+| `ammotype` | string | "standard" | "standard", "high_explosive", "airburst", "rocket" | Projectile behavior type |
 | `afterpen` | number | 0.5 | Any positive number | Delay (seconds) before HE explosion after armor penetration |
 | `airburst_time` | number | 2.0 | Any positive number | Time (seconds) before airburst explosion |
 | `detect_range` | number | 15 | Any positive number | Proximity detection range (studs) for airburst rounds |
 | `armor_pen` | number | 10 | Any positive number | Armor penetration value |
 | `explosion_radius` | number | 20 | Any positive number | Radius (studs) of explosion area effect |
 | `explosive_radius_damage` | number | 50 | Any positive number | Base damage dealt to parts within explosion radius |
-| `reload` | number | 1.0 | Any positive number | Reload time (seconds) between shots for all weapons |
+| `projectile_speed` | number | 100 | Any positive number | Projectile velocity (studs/second) |
+| `projectile_health` | number | 50 | Any positive number | Health points of projectiles - can be damaged and destroyed |
+| `bullet_count` | number | 10 | Any positive number | Current bullets in magazine |
+| `max_bullet_count` | number | 10 | Any positive number | Maximum magazine capacity |
+| `firerate` | number | 1.0 | Any positive number | Fire rate (shots per second) |
+| `reload` | number | 2.0 | Any positive number | Reload time (seconds) to refill magazine |
 
 **Ammo Type Behaviors:**
 - **"standard"**: Dark grey projectiles, deal direct damage on penetration, no explosion
 - **"high_explosive"**: Red projectiles, no direct damage, explode after afterpen delay when penetrating or immediately when blocked
 - **"airburst"**: Yellow projectiles, no direct damage, explode after airburst_time OR on contact OR when within detect_range of any part
+- **"rocket"**: Bright orange guided projectiles, follow player mouse cursor, explode on contact OR after airburst_time
 
 **Damage System:**
 - **Standard Rounds**: Deal direct damage to hit parts, pass through until blocked by armor
@@ -65,6 +79,24 @@ This document lists all user-configurable attributes that can be set on various 
 - **Minimum Damage**: 10% of base damage at maximum range
 - **Sphere Duration**: Visual explosion sphere auto-destroys after exactly 3 seconds
 - **Sphere Cleanup**: Multiple backup systems ensure no permanent spheres remain
+
+**Projectile Health System:**
+- **Destructible Projectiles**: All projectiles have health and can be damaged/destroyed by other projectiles or explosions
+- **Projectile-on-Projectile Combat**: Bullets can hit and damage rockets, rockets can hit other rockets
+- **Explosion Damage to Projectiles**: Explosions damage all projectiles within blast radius
+- **Destruction Behavior**: When projectile health reaches 0:
+  - Standard/Airburst projectiles: Simply destroyed with no explosion
+  - Rocket/High Explosive projectiles: Explode when destroyed (chain reactions possible)
+- **Chain Reactions**: Destroying explosive projectiles can trigger cascading explosions
+- **Defensive Applications**: AI turrets and players can shoot down incoming rockets
+
+**Ammunition Management System:**
+- **Magazine-Based Ammo**: Weapons have limited bullets per magazine (bullet_count)
+- **Fire Rate Control**: Weapons fire at configurable rate (shots per second)
+- **Manual Reload**: Players can manually reload to refill magazine
+- **Auto-Reload (AI)**: AI turrets automatically reload when magazine is empty
+- **Enhanced AI Defense**: AI turrets fire 3x faster when targeting rockets
+- **Realistic Combat**: No more infinite ammo - tactical ammunition management required
 
 ---
 
@@ -105,19 +137,54 @@ chamber:SetAttribute("armor_pen", 25)
 chamber:SetAttribute("afterpen", 0.3)
 ```
 
-### AI Turret System
+### High-Performance AI Turret (Anti-Missile Defense)
 ```lua
 -- VehicleSeat configuration
 vehicleSeat:SetAttribute("aiturret", true)
 vehicleSeat:SetAttribute("weapontype", "Cannon")
+vehicleSeat:SetAttribute("ai_update_interval", 0.02)  -- 50 FPS - very responsive
+vehicleSeat:SetAttribute("tracking_speed", 30)        -- Very fast tracking
+vehicleSeat:SetAttribute("target_cache_time", 0)      -- No cache - instant response
+vehicleSeat:SetAttribute("max_target_distance", 250)  -- Long range
 
--- Chamber configuration
-chamber:SetAttribute("reload", 0.5) -- Fast firing
-chamber:SetAttribute("ammotype", "high_explosive")
+-- Chamber configuration for anti-missile
+chamber:SetAttribute("ammotype", "standard")
+chamber:SetAttribute("firerate", 10.0) -- Very fast firing
 chamber:SetAttribute("armor_pen", 15)
+```
 
--- Create Airange part in the same parent model as VehicleSeat
--- Size the Airange part to define detection area
+### Heavy Defense AI Turret
+```lua
+-- VehicleSeat configuration
+vehicleSeat:SetAttribute("aiturret", true)
+vehicleSeat:SetAttribute("weapontype", "Cannon")
+vehicleSeat:SetAttribute("ai_update_interval", 0.08)  -- 12.5 FPS - moderate
+vehicleSeat:SetAttribute("tracking_speed", 10)        -- Slow but steady
+vehicleSeat:SetAttribute("target_cache_time", 0.15)   -- Some caching
+vehicleSeat:SetAttribute("max_target_distance", 180)  -- Medium range
+
+-- Chamber configuration for area denial
+chamber:SetAttribute("ammotype", "high_explosive")
+chamber:SetAttribute("firerate", 2.0) -- Slower but powerful
+chamber:SetAttribute("armor_pen", 25)
+chamber:SetAttribute("explosion_radius", 30)
+```
+
+### Long-Range Sniper AI Turret
+```lua
+-- VehicleSeat configuration
+vehicleSeat:SetAttribute("aiturret", true)
+vehicleSeat:SetAttribute("weapontype", "Cannon")
+vehicleSeat:SetAttribute("ai_update_interval", 0.1)   -- 10 FPS - patient
+vehicleSeat:SetAttribute("tracking_speed", 8)         -- Slow, precise tracking
+vehicleSeat:SetAttribute("target_cache_time", 0.2)    -- Longer cache for stability
+vehicleSeat:SetAttribute("max_target_distance", 350)  -- Very long range
+
+-- Chamber configuration for precision
+chamber:SetAttribute("ammotype", "standard")
+chamber:SetAttribute("firerate", 1.0) -- Deliberate firing
+chamber:SetAttribute("armor_pen", 30) -- High penetration
+chamber:SetAttribute("projectile_speed", 150) -- Fast projectiles
 ```
 
 ### Anti-Aircraft Gun
@@ -150,16 +217,71 @@ chamber:SetAttribute("ammotype", "standard")
 chamber:SetAttribute("armor_pen", 12)
 ```
 
+### Guided Rocket Launcher
+```lua
+-- VehicleSeat configuration
+vehicleSeat:SetAttribute("ForceMagnitude", 2500)
+vehicleSeat:SetAttribute("seattype", "turret")
+vehicleSeat:SetAttribute("weapontype", "Cannon")
+
+-- Chamber configuration (guided rockets)
+chamber:SetAttribute("ammotype", "rocket")
+chamber:SetAttribute("projectile_speed", 80)
+chamber:SetAttribute("explosion_radius", 25)
+chamber:SetAttribute("explosive_radius_damage", 75)
+chamber:SetAttribute("airburst_time", 5.0)
+chamber:SetAttribute("reload", 2.0)
+```
+
 ---
 
-## Usage Notes
+## AI Turret System Setup
 
-1. **Hover Activation**: Set `GravityCompensation ≥ 1.0` to enable hover mode
-2. **Weapon Firing**: Requires `weapontype = "Cannon"` and a "chamber" part in the vehicle
-3. **Armor Penetration**: Compare `armor_pen` vs `armor` to determine penetration
-4. **Health System**: Parts are destroyed when `health ≤ 0`
-5. **Airburst Timer**: Airburst rounds explode after timer OR on contact (whichever first)
-6. **Afterpen Delay**: Only applies to HE rounds that penetrate armor (armor > 0)
+### Required Components
+1. **VehicleSeat** with `aiturret = true` and `weapontype = "Cannon"`
+2. **Chamber part** named "chamber" in the same parent model as VehicleSeat
+3. **AIrange part** named "AIrange" in the same parent model as VehicleSeat
+
+### AIrange Part Setup
+- **Purpose**: Defines the detection area for the AI turret
+- **Size**: The part's size determines the detection volume (X, Y, Z dimensions)
+- **Position**: Should be positioned where you want the center of detection
+- **Transparency**: Recommended to set to 1.0 (invisible) for clean appearance
+- **CanCollide**: Should be false to avoid interference
+
+### AI Turret Performance Tuning
+
+#### For Maximum Responsiveness (Anti-Missile Defense):
+```lua
+vehicleSeat:SetAttribute("ai_update_interval", 0.02)  -- 50 FPS
+vehicleSeat:SetAttribute("target_cache_time", 0)      -- No caching
+```
+
+#### For Balanced Performance:
+```lua
+vehicleSeat:SetAttribute("ai_update_interval", 0.05)  -- 20 FPS (default)
+vehicleSeat:SetAttribute("target_cache_time", 0.1)    -- Light caching (default)
+```
+
+#### For CPU-Friendly Operation (Many Turrets):
+```lua
+vehicleSeat:SetAttribute("ai_update_interval", 0.1)   -- 10 FPS
+vehicleSeat:SetAttribute("target_cache_time", 0.3)    -- More caching
+```
+
+### AI Turret Targeting Behavior
+- **Priority 1**: Enemy rockets (for missile defense)
+- **Priority 2**: Enemy vehicles and parts with health, sorted by distance
+- **Self-Targeting Prevention**: Turrets will not target their own vehicle or projectiles
+- **Health Requirement**: Only targets parts with health > 0
+- **Armor Consideration**: Turrets consider armor penetration when engaging
+
+### AI Turret Automatic Features
+- **Auto-Reload**: Turrets automatically reload when ammunition runs out
+- **Smart Fire Rate**: 3x faster firing when targeting rockets
+- **Rocket Cooldown**: Prevents rocket spam with 1-second minimum between rocket fires
+- **Smooth Tracking**: Easing and deadzone for natural turret movement
+- **Range Validation**: Re-validates targets are in range before firing
 
 ---
 
@@ -168,8 +290,8 @@ chamber:SetAttribute("armor_pen", 12)
 All attributes are automatically initialized with default values by the server if not already set. You can override these defaults by setting the attributes manually on the appropriate parts.
 
 **Server initializes:**
-- VehicleSeat: `seattype`, `weapontype`
-- Chamber parts: `ammotype`, `afterpen`, `airburst_time`, `armor_pen`
+- VehicleSeat: `seattype`, `weapontype`, movement attributes (`ForceMagnitude`, `VerticalForceUp`, etc.)
+- Chamber parts: `ammotype`, `afterpen`, `airburst_time`, `armor_pen`, `projectile_speed`, `reload`, `detect_range`, `explosion_radius`, `explosive_radius_damage`
 - All parts: `armor`, `health`, `max_health`
 
 ---
@@ -279,6 +401,11 @@ end
 **High Penetration Explosive:**
 - Penetration: After `afterpen` delay
 - Blocked: Immediate explosion
+
+**Rocket:**
+- Contact: Immediate explosion on any collision
+- Timer: After `airburst_time` seconds if no contact
+- Guidance: Follows player mouse cursor with 15% guidance strength
 
 ### Console Debug Output:
 - `"SERVER: Explosion sphere created with ID: [id] - will destroy in 3 seconds"`
